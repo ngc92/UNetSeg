@@ -24,10 +24,9 @@ CellSegmentationConfig = namedtuple("CellSegmentationConfig",
                                      "resize_up",
                                      "xent_weight",         # Loss params 0.1
                                      "mse_weight",          # 1.0
-                                     "low_res_weight",      # 1.0
-                                     "low_res_xent_weight",
                                      "multi_scale_depth",   # 3
                                      "discrimination_loss",
+                                     "disc_loss_cap",
                                      "max_steps"
                                      ]
                                     )
@@ -48,8 +47,8 @@ class CellSegmentationModel:
 
         from unet.input import blur, downscale, augment_local_brightness, augment_local_contrast
         if is_training:
-            augmentation = preprocess.random_flips(True, True, 42) | preprocess.random_rotations(32) | \
-                           preprocess.random_crop(cfg.crop_size, 32, 2017)
+            augmentation = preprocess.random_crop(cfg.crop_size, 32, 2017) | preprocess.random_flips(True, True, 42) | \
+                           preprocess.random_rotations(32)
 
             prepare_original = augmentation | preprocess.random_contrast(0.25, 1.1) | \
                                downscale("avg", cfg.scale_factor)
@@ -64,8 +63,8 @@ class CellSegmentationModel:
             prepare_original = downscale("avg", cfg.scale_factor)
             prepare_segmented = downscale("max", cfg.scale_factor)
 
-        mapping_original = prepare_original.apply_to("A/image")
-        mapping_segmented = prepare_segmented.apply_to("B/image")
+        mapping_original = preprocess.copy_feature("A/image", "A/original") | prepare_original.apply_to("A/image")
+        mapping_segmented = preprocess.copy_feature("B/image", "B/original") | prepare_segmented.apply_to("B/image")
 
         # Cannot use more than 1 thread, as the random_flips / random_rotations lead to inconsistent results in that case.
         return load_tf_records(source_file, mapping_original | mapping_segmented, repeat_count=reps, num_threads=1,
@@ -85,8 +84,8 @@ class CellSegmentationModel:
         self.make_estimator().train(lambda: self.make_input(training_data, reps=reps, is_training=True),
                                     max_steps=self.config.max_steps)
 
-    def eval(self, eval_data):
-        return self.make_estimator().evaluate(lambda: self.make_input(eval_data))
+    def eval(self, eval_data, name=None):
+        return self.make_estimator().evaluate(lambda: self.make_input(eval_data), name=name)
 
     def predict(self, predict_data):
         estimator = self.make_estimator()
@@ -103,6 +102,9 @@ class CellSegmentationBuilder:
         self._bin_image = None
         self._low_res_gen = None
 
+        self._predictions = {}
+        self._evals = {}
+
     def _generate(self, input_image):
         generated, low_res = self.model.unet_gen(input_image)
         generated_img = tf.nn.sigmoid(generated)
@@ -112,7 +114,7 @@ class CellSegmentationBuilder:
         tf.summary.histogram("generated_hist", generated)
         tf.summary.histogram("gen_img_hist", generated_img)
 
-        tf.summary.image("original", input_image)
+        tf.summary.image("preprocessed", input_image)
         tf.summary.image("generated", generated_img)
         tf.summary.image("segmented", binary_image)
 
@@ -125,27 +127,25 @@ class CellSegmentationBuilder:
         tf.summary.image("target", target)
         xent = self._xent(target, self._generated)
 
-        # loss for downscaled version
-        down_target = tf.layers.average_pooling2d(target, 2, 2)
-        mse_down = self._mse(down_target, self._low_res_gen[-1])
-        xent_down = self._xent(down_target, self._low_res_gen[-1])
+        mse = self._mse(target, self._generated)
+        #multiscale_loss(self._gen_image, target, self.model.config.multi_scale_depth,
+        #                tf.losses.mean_squared_error)
 
-        mse = multiscale_loss(self._gen_image, target, self.model.config.multi_scale_depth,
-                              tf.losses.mean_squared_error)
+        tf.summary.scalar("xent/", xent)
+        tf.summary.scalar("mse/", mse)
+        self._evals["xent"] = tf.metrics.mean(xent)
+        self._evals["mse"] = tf.metrics.mean(mse)
 
-        self._classify_losses = {
-            "xent": xent,
-            "mse": mse,
-            "low_res_mse": mse_down,
-            "low_res_xent": xent_down
-        }
+        return self.model.config.mse_weight * mse + self.model.config.xent_weight * xent
 
     def _mse(self, labels, image_logits):
         white = tf.reduce_mean(labels)
         black = 1 - white
         ft = tf.layers.flatten(labels)
-        return tf.losses.mean_squared_error(tf.layers.flatten(labels), tf.layers.flatten(tf.nn.sigmoid(image_logits)),
-                                            reduction=tf.losses.Reduction.MEAN, weights=ft / white + (1 - ft) / black)
+        return tf.losses.mean_squared_error(tf.layers.flatten(labels),
+                                            tf.layers.flatten(tf.nn.sigmoid(image_logits)),
+                                            reduction=tf.losses.Reduction.MEAN,
+                                            weights=ft / white + (1 - ft) / black)
 
     def _xent(self, labels, image_logits):
         white = tf.reduce_mean(labels)
@@ -157,75 +157,28 @@ class CellSegmentationBuilder:
         return xent
 
     def model_fn(self, features, labels, mode):
+        tf.summary.image("original", features["A/original"])
         # build generator
         with tf.variable_scope("UNet"):
             self._generate(features["A/image"])
 
         # build loss
-        evals = {}
-
         if mode != tf.estimator.ModeKeys.PREDICT:
             # normal unet loss
             with tf.name_scope("unet_loss"):
-                self._classification_loss(features["B/image"])
-
-            for key in self._classify_losses:
-                tf.summary.scalar(key,  self._classify_losses[key])
-                evals[key] = tf.metrics.mean(self._classify_losses[key])
+                classify_loss = self._classification_loss(features["B/image"])
 
             if mode == tf.estimator.ModeKeys.EVAL:
-                evals["pr_curve"] = summary_lib.pr_curve_streaming_op(name='pr_curve', predictions=self._gen_image,
-                                                                      labels=features["B/image"], num_thresholds=11)
-
-            # total classification loss
-            classify_loss = self.model.config.mse_weight * self._classify_losses["mse"]
-            classify_loss += self.model.config.low_res_weight * self._classify_losses["low_res_mse"]
-            classify_loss += self.model.config.xent_weight * self._classify_losses["xent"]
-            classify_loss += self.model.config.low_res_xent_weight * self._classify_losses["low_res_xent"]
+                self._evals["pr_curve"] = summary_lib.pr_curve_streaming_op(name='pr_curve',
+                                                                            predictions=self._gen_image,
+                                                                            labels=features["B/image"],
+                                                                            num_thresholds=11)
             total_los = classify_loss
         else:
             total_los = None
 
         # prediction dict
-        predictions = {"generated_soft": self._gen_image, "generated_segmentation": self._bin_image}
-
-        # GAN loss
-        if self.model.config.discrimination_loss > 0.0:
-            disc = make_discriminator(3, "channels_first")
-            with tf.variable_scope("Discriminator"):
-                gfinal, gfeatures = disc(self._gen_image, mode != tf.estimator.ModeKeys.PREDICT)
-
-            pgen = tf.nn.sigmoid(gfinal)
-            predictions["p_gen"] = pgen
-
-            if mode != tf.estimator.ModeKeys.PREDICT:
-                with tf.variable_scope("Discriminator", reuse=True):
-                    rfinal, rfeatures = disc(features["B/image"], mode != tf.estimator.ModeKeys.PREDICT)
-                disc_loss = discrimination_loss(rfinal, gfinal, "DiscriminatorLoss")
-                gen_loss = generation_loss(gfinal, gfeatures, rfeatures, "GeneratorLoss")
-
-                # summaries / metrics
-                tf.summary.scalar("p_generated", tf.reduce_mean(pgen))
-
-                # image change
-                image_gradient = tf.gradients(gen_loss, self._gen_image)[0]
-                tf.summary.image("DiscLoss/ImageGradient", image_gradient)
-                tf.summary.image("DiscLoss/UpdatedImage",
-                                 tf.concat([image_gradient / tf.reduce_max(image_gradient, [1, 2, 3], keepdims=True),
-                                            self._gen_image,
-                                            features["B/image"]], axis=3))
-
-                evals["generator_loss"] = tf.metrics.mean(gen_loss)
-                evals["discriminator_loss"] = tf.metrics.mean(disc_loss)
-
-                # do not do any generator training for the first 500 steps
-                gen_factor = tf.cond(tf.less(tf.train.get_or_create_global_step(), 500),
-                                     lambda: tf.constant(0.0),
-                                     lambda: tf.constant(1.0))
-                normalizer = tf.cond(tf.less(self.model.config.discrimination_loss, 1.0),
-                                     lambda: tf.constant(1.0),
-                                     lambda: tf.stop_gradient(gen_loss))
-                total_los = classify_loss + gen_factor * gen_loss * self.model.config.discrimination_loss / normalizer
+        self._predictions = {"generated_soft": self._gen_image, "generated_segmentation": self._bin_image}
 
         # connected components
         cct = tf.contrib.image.connected_components(tf.less(features["B/image"][:, :, :, 0], 0.5))
@@ -233,16 +186,23 @@ class CellSegmentationBuilder:
         tf.summary.image("connected_components_target", tf.cast(cct, tf.float32)[:, :, :, None])
         tf.summary.image("connected_components_result", tf.cast(ccr, tf.float32)[:, :, :, None])
 
-        predictions["connected_components"] = ccr
+        self._predictions["connected_components"] = ccr
+
+        # GAN loss
+        if self.model.config.discrimination_loss > 0.0:
+            disc_loss, gan_loss = self._gan_loss(features, mode != tf.estimator.ModeKeys.PREDICT)
+
+            if mode != tf.estimator.ModeKeys.PREDICT:
+                total_los = classify_loss + gan_loss
 
         iou = iou_from_intersection_op(cct, ccr)
         tf.summary.scalar("iou", tf.reduce_mean(iou))
 
         if mode == tf.estimator.ModeKeys.EVAL:
-            evals["iou"] = tf.metrics.mean(tf.reduce_mean(iou))
+            self._evals["iou"] = tf.metrics.mean(tf.reduce_mean(iou))
 
         if mode == tf.estimator.ModeKeys.TRAIN:
-            boundaries = [100, 2000, 4000, 6000]
+            boundaries = [100, 2000, 4000, 8000]
             values = [1e-4, 1e-3, 5e-4, 1e-4, 5e-5]
             learning_rate = tf.train.piecewise_constant(tf.train.get_or_create_global_step(), boundaries, values)
             g_optimizer = tf.train.AdamOptimizer(learning_rate, epsilon=1e-4)
@@ -253,7 +213,7 @@ class CellSegmentationBuilder:
             # discriminator update
             if self.model.config.discrimination_loss > 0.0:
                 # only start training the discriminator after we have done some UNet training
-                lr = tf.train.piecewise_constant(tf.train.get_or_create_global_step(), [250], [0.0, 5e-4])
+                lr = tf.train.piecewise_constant(tf.train.get_or_create_global_step(), [500], [0.0, 5e-4])
                 d_optimizer = tf.train.AdamOptimizer(lr, epsilon=1e-4)
                 g_step = train_step
                 d_step = d_optimizer.minimize(disc_loss,
@@ -263,6 +223,45 @@ class CellSegmentationBuilder:
                 train_step = tf.group((g_step, d_step))
         else:
             train_step = None
-        return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions,
-                                          loss=total_los, eval_metric_ops=evals,
+        return tf.estimator.EstimatorSpec(mode=mode, predictions=self._predictions,
+                                          loss=total_los, eval_metric_ops=self._evals,
                                           train_op=train_step)
+
+    def _gan_loss(self, features, train_or_eval, use_target):
+        disc = make_discriminator(3, "channels_first")
+        with tf.variable_scope("Discriminator"):
+            gfinal, gfeatures = disc(self._gen_image, train_or_eval)
+        pgen = tf.nn.sigmoid(gfinal)
+        self._predictions["p_gen"] = pgen
+        if train_or_eval:
+            with tf.variable_scope("Discriminator", reuse=True):
+                rfinal, rfeatures = disc(features["B/image"], train_or_eval)
+            disc_loss = discrimination_loss(rfinal, gfinal, "DiscriminatorLoss")
+            gen_loss = generation_loss(gfinal, gfeatures, rfeatures, "GeneratorLoss")
+
+            # summaries / metrics
+            tf.summary.scalar("p_generated", tf.reduce_mean(pgen))
+
+            # image change
+            image_gradient = tf.gradients(gen_loss, self._gen_image)[0]
+            tf.summary.image("DiscLoss/ImageGradient", image_gradient)
+            tf.summary.image("DiscLoss/UpdatedImage",
+                             tf.concat([image_gradient / tf.reduce_max(image_gradient, [1, 2, 3], keepdims=True),
+                                        self._gen_image,
+                                        features["B/image"]], axis=3))
+
+            self._evals["generator_loss"] = tf.metrics.mean(gen_loss)
+            self._evals["discriminator_loss"] = tf.metrics.mean(disc_loss)
+
+            # do not do any generator training for the first 500 steps
+            gen_factor = tf.cond(tf.less(tf.train.get_or_create_global_step(), 750),
+                                 lambda: tf.constant(0.0),
+                                 lambda: tf.constant(1.0))
+            normalizer = tf.cond(tf.less(self.model.config.discrimination_loss, self.model.config.disc_loss_cap),
+                                 lambda: tf.constant(1.0),
+                                 lambda: tf.stop_gradient(gen_loss) / self.model.config.disc_loss_cap)
+            gan_loss = gen_factor * gen_loss * self.model.config.discrimination_loss / normalizer
+        else:
+            disc_loss = None
+            gan_loss = None
+        return disc_loss, gan_loss
