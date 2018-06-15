@@ -78,7 +78,10 @@ class CellSegmentationModel:
                                num_threads=4, batch_size=batch_size, greyscale=True, cache=True, take=cfg.take_only)
 
     def make_estimator(self):
-        return tf.estimator.Estimator(CellSegmentationBuilder(self).model_fn, self._ckp_path)
+        # only save one checkpoint
+        run_config = tf.estimator.RunConfig()
+        run_config = run_config.replace(keep_checkpoint_max=1)
+        return tf.estimator.Estimator(CellSegmentationBuilder(self).model_fn, self._ckp_path, config=run_config)
 
     @property
     def global_step(self):
@@ -181,6 +184,9 @@ class CellSegmentationBuilder:
                                                                             labels=features["B/image"],
                                                                             num_thresholds=11)
             total_los = classify_loss
+
+            tf.summary.image("unet_loss/result",
+                             tf.concat([self._gen_image, self._gen_image, features["B/image"]], axis=3))
         else:
             total_los = None
 
@@ -247,7 +253,8 @@ class CellSegmentationBuilder:
             gen_loss = generation_loss(gfinal, gfeatures, rfeatures, "GeneratorLoss")
 
             # summaries / metrics
-            tf.summary.scalar("p_generated", tf.reduce_mean(pgen))
+            self._evals["p_generated"] = tf.metrics.mean(pgen)
+            self._evals["p_real"] = tf.metrics.mean(tf.nn.sigmoid(rfinal))
 
             # image change
             image_gradient = tf.gradients(gen_loss, self._gen_image)[0]
@@ -268,6 +275,12 @@ class CellSegmentationBuilder:
                                  lambda: tf.constant(1.0),
                                  lambda: tf.stop_gradient(gen_loss) / self.model.config.disc_loss_cap)
             gan_loss = gen_factor * gen_loss * self.model.config.discrimination_loss / normalizer
+
+            tf.summary.scalar("GeneratorLoss/effective", gan_loss)
+
+            self._evals["generator_loss/raw"] = tf.metrics.mean(gen_loss)
+            self._evals["generator_loss/effective"] = tf.metrics.mean(gan_loss)
+            self._evals["discriminator_loss"] = tf.metrics.mean(disc_loss)
         else:
             disc_loss = None
             gan_loss = None
