@@ -15,7 +15,8 @@ InputConfig = namedtuple("InputConfig",
                          "local_augmentation",
                          "scale_factor",        # default: 2
                          "crop_size",           # default: 256
-                         "use_blur"])           # default: True
+                         "use_blur",            # default: True
+                         "take_only"])          # default: -1 -- all
 
 
 CellSegmentationConfig = namedtuple("CellSegmentationConfig",
@@ -45,30 +46,36 @@ class CellSegmentationModel:
         if batch_size is None:
             batch_size = cfg.batch_size
 
-        from unet.input import blur, downscale, augment_local_brightness, augment_local_contrast
+        from unet.input import blur, downscale, augment_local_brightness, augment_local_contrast, stack_images, unstack_images
         if is_training:
-            augmentation = preprocess.random_crop(cfg.crop_size, 32, 2017) | preprocess.random_flips(True, True, 42) | \
-                           preprocess.random_rotations(32)
+            consistent_trafo = preprocess.random_crop(cfg.crop_size, 32) | \
+                             preprocess.random_flips(True, True) | \
+                             preprocess.random_rotations()
+            prepare_common = stack_images("image_stack", ["A/image", "B/image"]) | \
+                             consistent_trafo.apply_to("image_stack") | \
+                             unstack_images("image_stack", ["A/image", "B/image"])
 
-            prepare_original = augmentation | preprocess.random_contrast(0.25, 1.1) | \
+            prepare_original = preprocess.random_contrast(0.25, 1.1) | \
                                downscale("avg", cfg.scale_factor)
 
             if cfg.local_augmentation:
                 prepare_original |= augment_local_contrast(0.1, 42) | augment_local_brightness(0.1, 21)
 
-            prepare_segmented = augmentation | downscale("max", cfg.scale_factor)
+            prepare_segmented = downscale("max", cfg.scale_factor)
             if cfg.use_blur:
                 prepare_segmented |= blur(1.0, True)
         else:
             prepare_original = downscale("avg", cfg.scale_factor)
             prepare_segmented = downscale("max", cfg.scale_factor)
+            prepare_common = preprocess.nothing
 
-        mapping_original = preprocess.copy_feature("A/image", "A/original") | prepare_original.apply_to("A/image")
-        mapping_segmented = preprocess.copy_feature("B/image", "B/original") | prepare_segmented.apply_to("B/image")
+        copy = preprocess.copy_feature("A/image", "A/original") | preprocess.copy_feature("B/image", "B/original")
+        mapping_original =  prepare_original.apply_to("A/image")
+        mapping_segmented = prepare_segmented.apply_to("B/image")
 
         # Cannot use more than 1 thread, as the random_flips / random_rotations lead to inconsistent results in that case.
-        return load_tf_records(source_file, mapping_original | mapping_segmented, repeat_count=reps, num_threads=1,
-                               batch_size=batch_size, greyscale=True)
+        return load_tf_records(source_file, copy | prepare_common | mapping_original | mapping_segmented, repeat_count=reps,
+                               num_threads=4, batch_size=batch_size, greyscale=True, cache=True, take=cfg.take_only)
 
     def make_estimator(self):
         return tf.estimator.Estimator(CellSegmentationBuilder(self).model_fn, self._ckp_path)

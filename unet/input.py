@@ -119,3 +119,19 @@ def downscale(mode="avg", factor=2):
     return preprocess.Preprocessor(downscale_)
 
 
+def stack_images(stack_name, keys):
+    def stack(data):
+        images = [data[key] for key in keys]
+        data[stack_name] = tf.concat(images, 2)
+        return data
+    return preprocess.Preprocessor(stack)
+
+
+def unstack_images(stack_name, keys):
+    def stack(data):
+        images = tf.unstack(data[stack_name], axis=2)
+        for key, image in zip(keys, images):
+            data[key] = image[:, :, None]
+        return data
+
+    return preprocess.Preprocessor(stack)
