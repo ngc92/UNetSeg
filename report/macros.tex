@@ -1,0 +1,34 @@
+\usepackage{xparse}
+
+% math ops
+\newcommand{\td}[1]{\mathrm{d}#1}
+\newcommand{\dt}{\mathrm{d}t}
+\newcommand{\pdiv}[2]{\frac{\partial #1}{\partial #2}}
+\newcommand{\tdiv}[2]{\frac{\td{#1}}{\td{#2}}}
+\newcommand{\definemapping}[3]{#1\colon #2 \ \longrightarrow\  #3\,}
+\newcommand{\ix}[1]{_{\mathrm{#1}}}
+
+\DeclareMathOperator{\const}{const}
+\DeclareMathOperator{\sign}{sg}
+\DeclareMathOperator{\argmin}{argmin}
+\DeclareMathOperator{\argmax}{argmax}
+\newcommand{\transpose}{^{\mathrm{T}}}
+
+\newcommand{\uniform}[1]{\mathcal{U}\left( #1 \right)}
+\newcommand{\mat}[1]{\mathbf{#1}}
+
+\NewDocumentCommand{\functional}{mmo}{%
+  #1 %
+  \IfValueTF{#3}{_{#3}}{}%
+  \!\left[ #2 \right]%
+}
+
+\NewDocumentCommand{\expectation}{om}{\functional{\mathbb{E}}{#2}[#1]}
+\NewDocumentCommand{\probability}{om}{\functional{\mathbb{P}}{#2}[#1]}
+\NewDocumentCommand{\variance}{om}{\functional{\mathbb{V}}{#2}[#1]}
+
+
+\newcommand{\reals}{\mathbb{R}}
+\newcommand{\pihalf}{\frac{\pi}{2}}
+\newcommand{\sigmaalg}{\mathcal{F}}
+\newcommand{\borel}{\mathcal{B}}

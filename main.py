@@ -5,64 +5,62 @@ from collections import namedtuple
 
 from unet.summary import get_scalars_from_event
 
-ExpConfig = namedtuple("ExpConfig", ["name", "input", "model"])
+ExpConfig = namedtuple("ExpConfig", ["name", "input", "model", "epochs_per_eval"])
 
 # GLOBAL PARAMS
-BATCH_SIZE = 8
+BATCH_SIZE = 16
 SCALE_FACTOR = 2
 CROP_SIZE = 256
-NUM_STEPS = 10000
+NUM_STEPS = 20500
+NUM_RUNS = 3
 
 
 # define a set of configurations that will be run
-def input_cfg(local_aug, blurring):
-    return InputConfig(BATCH_SIZE, local_aug, SCALE_FACTOR, CROP_SIZE, blurring)
+def input_cfg(local_aug, blurring, data_amount=-1):
+    return InputConfig(BATCH_SIZE, local_aug, SCALE_FACTOR, CROP_SIZE, blurring, data_amount)
 
 
 def seg_cfg(resize=False, num_layers=4, xent_w=1.0, mse_w=0.0, multiscale=1, disc_w=0.0,
-            disc_cap=1.0):
-    return CellSegmentationConfig(num_layers, 32, resize, xent_w, mse_w, multiscale, disc_w, disc_cap, NUM_STEPS)
-
-
-def make_jsonable(data):
-    jsonable = {}
-    for key in data:
-        try:
-            jsonable[key] = data[key].tolist()
-        except AttributeError:
-            if not isinstance(data[key], bytes):
-                jsonable[key] = data[key]
-    return jsonable
+            disc_cap=1.0, fm=0.9, disc_lr=5e-4, disc_opt="ADAM", disc_noise=None, disc_cond=None):
+    return CellSegmentationConfig(num_layers, 32, resize, xent_w, mse_w, multiscale, disc_w, disc_cap, fm, disc_lr,
+                                  NUM_STEPS, disc_opt, disc_noise, disc_cond)
 
 
 good_input = input_cfg(True, True)
 configurations = [
     # use a standard UNet with fixed parameters and vary only the input preprocessing
-    #ExpConfig("simple_no_extra_aug", input_cfg(False, False), seg_cfg()),
-    #ExpConfig("simple_with_blur", input_cfg(False, True), seg_cfg()),
-    #ExpConfig("simple_with_local_aug", input_cfg(True, False), seg_cfg()),
-    ExpConfig("simple", input_cfg(True, True), seg_cfg()),
+    ExpConfig("simple_no_extra_aug", input_cfg(False, False), seg_cfg(), 50),
+    ExpConfig("simple", input_cfg(True, True), seg_cfg(), 50),
     # the upscaling network
-    ExpConfig("upscaling", input_cfg(True, True), seg_cfg(resize=True)),
+    ExpConfig("upscaling", input_cfg(True, True), seg_cfg(resize=True), 50),
     # now start with cooler loss functions
-    ExpConfig("mse", good_input, seg_cfg(xent_w=0.0, mse_w=1.0)),
-    ExpConfig("depth3", good_input, seg_cfg(num_layers=3)),
-    ExpConfig("disc_uncapped", good_input, seg_cfg(disc_w=0.2, disc_cap=100)),
-    ExpConfig("disc_0.2", good_input, seg_cfg(disc_w=0.2)),
-    ExpConfig("disc_0.1", good_input, seg_cfg(disc_w=0.1)),
-    ExpConfig("disc_0.5", good_input, seg_cfg(disc_w=0.5)),
+    ExpConfig("mse", good_input, seg_cfg(xent_w=0.0, mse_w=1.0), 50),
+    ExpConfig("depth3", good_input, seg_cfg(num_layers=3), 50),
+    ExpConfig("dlr_1e-3", good_input, seg_cfg(resize=True, disc_w=0.1, disc_lr=1e-3, disc_opt="SGD"), 50),
+    ExpConfig("dlr_1e-4", good_input, seg_cfg(resize=True, disc_w=0.1, disc_lr=1e-4, disc_opt="SGD"), 50),
+    ExpConfig("dlr_5e-5_ADAM", good_input, seg_cfg(resize=True, disc_w=0.1, disc_lr=5e-5, disc_opt="ADAM"), 50),
+    ExpConfig("dlr_5e-5_ADAM_clip", good_input, seg_cfg(resize=True, disc_w=0.1, disc_cap=0.25, disc_lr=5e-5, disc_opt="ADAM"), 50),
+    ExpConfig("dlr_5e-5_ADAM_noise", good_input, seg_cfg(resize=True, disc_w=0.1, disc_lr=5e-5, disc_opt="ADAM",
+                                                         disc_noise=0.05), 50),
+    ExpConfig("dlr_5e-5_ADAM_clip_0.25", good_input, seg_cfg(resize=True, disc_w=0.25, disc_cap=0.25, disc_lr=5e-5, disc_opt="ADAM"), 50),
+    ExpConfig("dlr_5e-5_ADAM_clip_0.5", good_input, seg_cfg(resize=True, disc_w=0.5, disc_cap=0.2, disc_lr=5e-5, disc_opt="ADAM"), 50),
+    ExpConfig("dlr_only_0.1", good_input, seg_cfg(resize=True, disc_w=0.25, disc_cond=0.1, disc_lr=5e-5, disc_opt="ADAM"), 50),
+
+    ExpConfig("less_simple", input_cfg(True, True, 20), seg_cfg(), 250),
+    ExpConfig("less_gan", input_cfg(True, True, 20), seg_cfg(resize=True, disc_w=0.25, disc_cap=0.25, disc_lr=5e-5, disc_opt="ADAM"), 250),
+    #ExpConfig("less_disc_0.1_up", input_cfg(True, True, 20), seg_cfg(disc_w=0.1, resize=True), 250),
 ]
 
-results = {}
 
-for config in configurations:
-    model = CellSegmentationModel(os.path.join("ckp", config.name), config.input, config.model)
-
+def train_model(config, model: CellSegmentationModel):
     # if not yet trained: train model
     while model.global_step < NUM_STEPS:
-        model.train("train.tfrecords", reps=50)
+        print(config.name + " steps: ", model.global_step)
+        model.train("train.tfrecords", reps=int(config.epochs_per_eval * (0.2 * np.random.rand() + 0.8)) + 1)
         model.eval("eval.tfrecords")
 
+
+def predict_with_model(config, model: CellSegmentationModel):
     # if not yet existing: make predictions
     result_dir = os.path.join("result", config.name)
     if not os.path.exists(result_dir):
@@ -77,24 +75,10 @@ for config in configurations:
             scipy.misc.imsave(os.path.join(result_dir, name + "_seg.png"),
                               p["connected_components"])
 
-        # and also do evaluation on eval and training set and save results
-        test_result = model.eval("eval.tfrecords")
-        train_result = model.eval("train.tfrecords", name="train")
-        results[config.name] = {"test": make_jsonable(test_result), "train": make_jsonable(train_result)}
-        print(test_result)
-        with open(os.path.join(result_dir, "eval.json"), "w") as file_:
-            json.dump(results[config.name], file_, indent=2)
 
-    else:
-        with open(os.path.join(result_dir, "eval.json"), "r") as file_:
-            results[config.name] = json.load(file_)
-
-print(results)
-
-for config in configurations:
-    result_dir = os.path.join("ckp", config.name, "eval")
-    steps, values = get_scalars_from_event(result_dir, "iou")
-    np.savetxt(os.path.join("report", "data", config.name+"_iou.txt"), np.transpose([steps, values]))
-
-    steps, values = get_scalars_from_event(result_dir, "xent")
-    np.savetxt(os.path.join("report", "data", config.name + "_xent.txt"), np.transpose([steps, values]))
+for i in range(NUM_RUNS):
+    for config in configurations:
+        model = CellSegmentationModel(os.path.join("ckp", config.name, str(i)), config.input, config.model)
+        train_model(config, model)
+        if i == 0:
+            predict_with_model(config, model)

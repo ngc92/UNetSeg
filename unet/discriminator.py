@@ -32,14 +32,24 @@ def make_discriminator(layers, data_format="channels_last"):
     return discriminator
 
 
-def discrimination_loss(logits_fake, logits_real, scope):
+def discrimination_loss(logits_fake, logits_real, noise=None, scope="discriminator_loss"):
     with tf.name_scope(scope):
-        fake_loss = tf.losses.sigmoid_cross_entropy(tf.zeros_like(logits_fake), logits=logits_fake, scope="fake_loss",
+        if noise is None:
+            target_fake = tf.zeros_like(logits_fake)
+            target_real = tf.ones_like(logits_real)
+        else:
+            target_fake = tf.random_uniform(tf.shape(logits_fake), 0.0, 1.0)
+            target_fake = tf.cast(tf.less(target_fake, noise), tf.float32)
+
+            target_real = tf.random_uniform(tf.shape(logits_fake), 0.0, 1.0)
+            target_real = tf.cast(tf.greater(target_real, noise), tf.float32)
+
+        fake_loss = tf.losses.sigmoid_cross_entropy(target_fake, logits=logits_fake, scope="fake_loss",
                                                     reduction=tf.losses.Reduction.MEAN)
         tf.summary.scalar("fake", fake_loss)
         tf.summary.scalar("fake_p", tf.reduce_mean(tf.nn.sigmoid(logits_fake)))
 
-        real_loss = tf.losses.sigmoid_cross_entropy(tf.ones_like(logits_real), logits_real, scope="real_loss",
+        real_loss = tf.losses.sigmoid_cross_entropy(target_real, logits_real, scope="real_loss",
                                                     reduction=tf.losses.Reduction.MEAN, label_smoothing=0.1)
         tf.summary.scalar("real", real_loss)
         tf.summary.scalar("real_p", tf.reduce_mean(tf.nn.sigmoid(logits_real)))
@@ -60,7 +70,7 @@ def _feature_matching(fake, real, scope="feature_matching"):
         return losses
 
 
-def generation_loss(fake_logits, fake_features, real_features, scope):
+def generation_loss(fake_logits, fake_features, real_features, feature_matching_weight, scope):
     with tf.name_scope(scope):
         # discrimination loss
         discrimination = tf.losses.sigmoid_cross_entropy(tf.ones_like(fake_logits), fake_logits,
@@ -71,6 +81,6 @@ def generation_loss(fake_logits, fake_features, real_features, scope):
         feature_matching = tf.add_n(_feature_matching(fake_features, real_features, "matching"))
         tf.summary.scalar("feature_matching", feature_matching)
 
-        total = (feature_matching + 0.1*discrimination)
+        total = (feature_matching_weight * feature_matching + (1.0 - feature_matching_weight)*discrimination)
         tf.summary.scalar("total", total)
     return total
