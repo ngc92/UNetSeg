@@ -25,13 +25,11 @@ CellSegmentationConfig = namedtuple("CellSegmentationConfig",
                                      "mse_weight",  # 1.0
                                      "multi_scale_depth",  # 3
                                      "discrimination_loss",
-                                     "disc_loss_cap",
                                      "feature_matching",
                                      "disc_lr",
                                      "max_steps",
                                      "disc_opt",  # either SGD or ADAM
                                      "disc_noise",  # None, or a float in (0, 0.5)
-                                     "disc_cond"  # train discriminator only if gen is better than this value
                                      ]
                                     )
 
@@ -55,6 +53,9 @@ class CellSegmentationModel:
             consistent_trafo = preprocess.random_crop(cfg.crop_size, 32) | \
                                preprocess.random_flips(True, True) | \
                                preprocess.random_rotations()
+
+            # stack the images together before applying transformations, to ensure that they are rotated/flipped
+            # consistently
             prepare_common = stack_images("image_stack", ["A/image", "B/image"]) | \
                              consistent_trafo.apply_to("image_stack") | \
                              unstack_images("image_stack", ["A/image", "B/image"])
@@ -77,7 +78,6 @@ class CellSegmentationModel:
         mapping_original = prepare_original.apply_to("A/image")
         mapping_segmented = prepare_segmented.apply_to("B/image")
 
-        # Cannot use more than 1 thread, as the random_flips / random_rotations lead to inconsistent results in that case.
         return load_tf_records(source_file, copy | prepare_common | mapping_original | mapping_segmented,
                                repeat_count=reps,
                                num_threads=4, batch_size=batch_size, greyscale=True, cache=True, take=cfg.take_only)
@@ -177,6 +177,9 @@ class CellSegmentationBuilder:
         with tf.variable_scope("UNet"):
             self._generate(features["A/image"])
 
+        # prediction dict
+        self._predictions = {"generated_soft": self._gen_image, "generated_segmentation": self._bin_image}
+
         # build loss
         if mode != tf.estimator.ModeKeys.PREDICT:
             # normal unet loss
@@ -194,9 +197,6 @@ class CellSegmentationBuilder:
                              tf.concat([self._gen_image, self._gen_image, features["B/image"]], axis=3))
         else:
             total_los = None
-
-        # prediction dict
-        self._predictions = {"generated_soft": self._gen_image, "generated_segmentation": self._bin_image}
 
         # connected components
         cct = tf.contrib.image.connected_components(tf.less(features["B/image"][:, :, :, 0], 0.5))
@@ -239,17 +239,9 @@ class CellSegmentationBuilder:
                 else:
                     raise NotImplementedError()
                 g_step = train_step
-                if self.model.config.disc_cond is None:
-                    d_step = d_optimizer.minimize(disc_loss,
-                                                  global_step=None,
-                                                  var_list=tf.trainable_variables("Discriminator"))
-                else:
-                    d_step = tf.cond(tf.greater(gan_loss, self.model.config.disc_cond),
-                                     lambda: tf.no_op(),
-                                     lambda: d_optimizer.minimize(disc_loss,
-                                                                  global_step=None,
-                                                                  var_list=tf.trainable_variables("Discriminator"))
-                                     )
+                d_step = d_optimizer.minimize(disc_loss,
+                                              global_step=None,
+                                              var_list=tf.trainable_variables("Discriminator"))
                 disc_up_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, "Discriminator")
                 train_step = tf.group((g_step, d_step) + tuple(disc_up_ops))
         else:
@@ -264,38 +256,39 @@ class CellSegmentationBuilder:
             gfinal, gfeatures = disc(self._gen_image, train_or_eval)
         pgen = tf.nn.sigmoid(gfinal)
         self._predictions["p_gen"] = pgen
+
+        # we also want to add the image gradient of the discriminator to the prediction results.
+        with tf.variable_scope("Discriminator", reuse=True):
+            rfinal, rfeatures = disc(features["B/image"], train_or_eval)
+
+        gen_loss = generation_loss(fake_logits=gfinal, fake_features=gfeatures, real_features=rfeatures,
+                                   feature_matching_weight=self.model.config.feature_matching,
+                                   scope="GeneratorLoss")
+
+        # image change
+        image_gradient = tf.gradients(gen_loss, self._gen_image)[0]
+        self._predictions["GAN_gradient"] = image_gradient
+        tf.summary.image("DiscLoss/ImageGradient", image_gradient)
+        vis = tf.concat([image_gradient / tf.reduce_max(tf.abs(image_gradient), [1, 2, 3], keepdims=True),
+                         self._gen_image, features["B/image"]], axis=3)
+        tf.summary.image("DiscLoss/UpdatedImage", vis)
+        self._predictions["GAN_vis"] = vis
+
         if train_or_eval:
-            with tf.variable_scope("Discriminator", reuse=True):
-                rfinal, rfeatures = disc(features["B/image"], train_or_eval)
             disc_loss = discrimination_loss(logits_fake=gfinal,
                                             logits_real=rfinal,
                                             noise=self.model.config.disc_noise,
                                             scope="DiscriminatorLoss")
-            gen_loss = generation_loss(fake_logits=gfinal, fake_features=gfeatures, real_features=rfeatures,
-                                       feature_matching_weight=self.model.config.feature_matching,
-                                       scope="GeneratorLoss")
 
             # summaries / metrics
             self._evals["p_generated"] = tf.metrics.mean(pgen)
             self._evals["p_real"] = tf.metrics.mean(tf.nn.sigmoid(rfinal))
 
-            # image change
-            image_gradient = tf.gradients(gen_loss, self._gen_image)[0]
-            tf.summary.image("DiscLoss/ImageGradient", image_gradient)
-            tf.summary.image("DiscLoss/UpdatedImage",
-                             tf.concat(
-                                 [image_gradient / tf.reduce_max(tf.abs(image_gradient), [1, 2, 3], keepdims=True),
-                                  self._gen_image,
-                                  features["B/image"]], axis=3))
-
             # do not do any generator training for the first 500 steps
             gen_factor = tf.cond(tf.less(tf.train.get_or_create_global_step(), 500),
                                  lambda: tf.constant(0.0),
                                  lambda: tf.constant(1.0))
-            normalizer = tf.cond(tf.less(gen_loss, self.model.config.disc_loss_cap),
-                                 lambda: tf.constant(1.0),
-                                 lambda: tf.stop_gradient(gen_loss) / self.model.config.disc_loss_cap)
-            gan_loss = gen_factor * gen_loss * self.model.config.discrimination_loss / normalizer
+            gan_loss = gen_factor * gen_loss * self.model.config.discrimination_loss
 
             tf.summary.scalar("GeneratorLoss/effective", gan_loss)
 
