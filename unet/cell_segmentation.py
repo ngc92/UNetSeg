@@ -41,11 +41,15 @@ class CellSegmentationModel:
         self.config = cfg
         self.unet_gen = make_unet_generator(cfg.num_layers, cfg.num_features, "channels_first", cfg.resize_up)
 
-    def make_input(self, source_file, batch_size=None, reps=1, is_training=False):
+    def make_input(self, source_file, batch_size=None, reps=1, is_training=False, threads=-1):
         cfg = self.input_config
 
         if batch_size is None:
             batch_size = cfg.batch_size
+
+        if threads == -1:
+            import multiprocessing
+            threads = multiprocessing.cpu_count()
 
         from unet.input import blur, downscale, augment_local_brightness, augment_local_contrast, stack_images, \
             unstack_images
@@ -80,7 +84,7 @@ class CellSegmentationModel:
 
         return load_tf_records(source_file, copy | prepare_common | mapping_original | mapping_segmented,
                                repeat_count=reps,
-                               num_threads=4, batch_size=batch_size, greyscale=True, cache=True, take=cfg.take_only)
+                               num_threads=threads, batch_size=batch_size, greyscale=True, cache=True, take=cfg.take_only)
 
     def make_estimator(self):
         # only save one checkpoint
@@ -95,8 +99,9 @@ class CellSegmentationModel:
         except ValueError:
             return 0
 
-    def train(self, training_data, reps):
-        self.make_estimator().train(lambda: self.make_input(training_data, reps=reps, is_training=True),
+    def train(self, training_data, reps, input_threads=-1):
+        input_fn = lambda: self.make_input(training_data, reps=reps, is_training=True, threads=input_threads)
+        self.make_estimator().train(input_fn,
                                     max_steps=self.config.max_steps)
 
     def eval(self, eval_data, name=None):

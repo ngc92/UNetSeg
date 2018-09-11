@@ -13,6 +13,7 @@ SCALE_FACTOR = 2
 CROP_SIZE = 256
 NUM_STEPS = 20500
 NUM_RUNS = 5
+EPOCHS_PER_EVAL = 100
 
 
 # define a set of configurations that will be run
@@ -29,40 +30,43 @@ def seg_cfg(resize=False, num_layers=4, xent_w=1.0, mse_w=0.0, multiscale=1, dis
 good_input = input_cfg(True, True)
 
 
+def FExpConfig(name, model):
+    return ExpConfig(name, good_input, model, epochs_per_eval=EPOCHS_PER_EVAL)
+
+
 configurations = [
     # use a standard UNet with fixed parameters and vary only the input preprocessing
-    ExpConfig("simple_no_extra_aug", input_cfg(False, False), seg_cfg(), 50),
-    ExpConfig("simple", input_cfg(True, True), seg_cfg(), 50),
+    ExpConfig("simple_no_extra_aug", input_cfg(False, False), seg_cfg(), EPOCHS_PER_EVAL),
+    FExpConfig("simple", seg_cfg()),
 
     # test different network sizes and loss functions
-    ExpConfig("upscaling", input_cfg(True, True), seg_cfg(resize=True), 50),
-    ExpConfig("depth3", good_input, seg_cfg(num_layers=3), 50),
-    ExpConfig("depth3-ups", good_input, seg_cfg(num_layers=3, resize=True), 50),
-    ExpConfig("mse", good_input, seg_cfg(xent_w=0.0, mse_w=1.0), 50),
+    FExpConfig("upscaling", seg_cfg(resize=True)),
+    FExpConfig("depth3", seg_cfg(num_layers=3)),
+    FExpConfig("depth3-ups", seg_cfg(num_layers=3, resize=True)),
+    FExpConfig("mse", seg_cfg(xent_w=0.0, mse_w=1.0)),
 
     # gan configs: vary depths and prefactor
-    ExpConfig("gan_3_w_0.25", good_input, seg_cfg(num_layers=3, resize=True, disc_w=0.25, disc_lr=5e-5), 50),
-    ExpConfig("gan_4_w_0.25", good_input, seg_cfg(num_layers=4, resize=True, disc_w=0.25, disc_lr=5e-5), 50),
+    FExpConfig("gan_3_w_0.25", seg_cfg(num_layers=3, resize=True, disc_w=0.25, disc_lr=5e-5)),
+    FExpConfig("gan_4_w_0.25", seg_cfg(num_layers=4, resize=True, disc_w=0.25, disc_lr=5e-5)),
 
-    ExpConfig("gan_3_w_0.15", good_input, seg_cfg(num_layers=3, resize=True, disc_w=0.15, disc_lr=5e-5), 50),
-    ExpConfig("gan_4_w_0.15", good_input, seg_cfg(num_layers=4, resize=True, disc_w=0.15, disc_lr=5e-5), 50),
+    FExpConfig("gan_3_w_0.15", seg_cfg(num_layers=3, resize=True, disc_w=0.15, disc_lr=5e-5)),
+    FExpConfig("gan_4_w_0.15", seg_cfg(num_layers=4, resize=True, disc_w=0.15, disc_lr=5e-5)),
 
-    ExpConfig("gan_3_w_0.33", good_input, seg_cfg(num_layers=3, resize=True, disc_w=0.33, disc_lr=5e-5), 50),
-    ExpConfig("gan_4_w_0.33", good_input, seg_cfg(num_layers=4, resize=True, disc_w=0.33, disc_lr=5e-5), 50),
+    FExpConfig("gan_3_w_0.33", seg_cfg(num_layers=3, resize=True, disc_w=0.33, disc_lr=5e-5)),
+    FExpConfig("gan_4_w_0.33", seg_cfg(num_layers=4, resize=True, disc_w=0.33, disc_lr=5e-5)),
 
     # vary discriminator learning rate
-    ExpConfig("gan_3_slow", good_input, seg_cfg(num_layers=3, resize=True, disc_w=0.25, disc_lr=1e-5), 50),
-    ExpConfig("gan_3_sgd", good_input, seg_cfg(num_layers=3, resize=True, disc_w=0.25, disc_lr=1e-3, disc_opt="SGD"), 50),
-    ExpConfig("gan_3_fast", good_input, seg_cfg(num_layers=3, resize=True, disc_w=0.25, disc_lr=1e-4), 50),
+    FExpConfig("gan_3_slow", seg_cfg(num_layers=3, resize=True, disc_w=0.25, disc_lr=1e-5)),
+    FExpConfig("gan_3_sgd", seg_cfg(num_layers=3, resize=True, disc_w=0.25, disc_lr=1e-3, disc_opt="SGD")),
+    FExpConfig("gan_3_fast", seg_cfg(num_layers=3, resize=True, disc_w=0.25, disc_lr=1e-4)),
 
     # show utility of feature matching
-    ExpConfig("gan_3_no_fm", good_input, seg_cfg(num_layers=3, resize=True, disc_w=0.25, disc_lr=5e-5, disc_opt="ADAM",
-                                                 fm=0.0), 50),
+    FExpConfig("gan_3_no_fm", seg_cfg(num_layers=3, resize=True, disc_w=0.25, disc_lr=5e-5, disc_opt="ADAM", fm=0.0)),
 
 
-    ExpConfig("less_simple", input_cfg(True, True, 20), seg_cfg(), 250),
-    ExpConfig("less_gan", input_cfg(True, True, 20), seg_cfg(resize=True, disc_w=0.25, disc_lr=5e-5, disc_opt="ADAM"), 250),
-    #ExpConfig("less_disc_0.1_up", input_cfg(True, True, 20), seg_cfg(disc_w=0.1, resize=True), 250),
+    ExpConfig("less_simple", input_cfg(True, True, 20), seg_cfg(), 10*EPOCHS_PER_EVAL),
+    ExpConfig("less_gan", input_cfg(True, True, 20), seg_cfg(resize=True, disc_w=0.25, disc_lr=5e-5, disc_opt="ADAM"),
+              10*EPOCHS_PER_EVAL),
 ]
 
 
