@@ -6,50 +6,98 @@
 
 \begin{document}
 
-    \title{Supplementing UNets with a GAN Loss for Cell Segmentation}
+    \title{Supplementing U-Nets with a GAN Loss for Cell Segmentation}
     \author{Erik Schultheis}
     \maketitle
 
 	\section{Introduction}
 
-    In this work a deep network called a UNet \cite{ronneberger2015u} is used to generate
+    In this work a deep network called a U-Net \cite{ronneberger2015u} is used to generate
     segmentations from cell images. This means that given a black and white microscopy image of a
     slice of cells, we want the  network to detect the cell boundaries even if the quality of the
     original image is very low. To improve upon that architecture a regularizing loss inspired by
     generative adversarial  networks is added.
 
-    The UNet architecture was chosen due to its success for other bioimaging segmentationt tasks. 
+    The U-Net architecture was chosen due to its success for other bioimaging segmentation tasks. 
     It allows for precise localization of the segmentation classes and can be trained from few
     training examples. It is fully convolutional so it can be applied independent of the input
     image size. However, even the production of the low number (order of hundreds) of labelled
     training data can be expensive. 
 
-    An alternative than does not need corresponding training data can be constructed with 
-    generative adversarial networks. In this case a \emph{Generator} network constructs fake data,
-    and a \emph{Discriminator} networks tries to distinguish it from real data. The competing 
-    processes between genrator and discriminator result in the generator generating more and more
-    realistic data. 
+    An alternative that does not need paired training data can be constructed with generative
+    adversarial networks. In this case a \emph{Generator} network constructs fake data, and a
+    \emph{Discriminator} network tries to distinguish it from real data. The competing  processes
+    between generator and discriminator result in the generator producing more and more realistic
+    data.
 
-    By changing the generator to an image to image network, and introducing a cyclic consistency
+    By changing the generator to an image to image network, and introducing a cycle consistency
     loss, this architecture can be used for image-to-image transfers as done e.g. in
     \emph{CycleGANs} \cite{zhu2017unpaired} and \emph{DiscoGANs} \cite{kim2017learning}.  The
-    training requires data from both domains, but there is no need to have corresponding samples. In
-    particular, one can use a data  set that contains cell images for which no corresponding ground-
-    truth segmentation is available.
+    training requires data from both domains, but does not need paired samples. In particular, one
+    can use a data set that contains cell images for which no corresponding ground-truth
+    segmentation is available.
     
     Unfortunatle, the training process of GAN networks is far more unstable and slow than that of 
-    UNets. For this reason we try to combine these two processes by adding a GAN-like loss as an
-    additional regularization to the UNet. 
+    U-Nets. For this reason we try to combine these two processes by adding a GAN-like loss as an
+    additional regularization to the U-Net. This should make the U-Net produce pictures that are 
+    both close to the ground-truth data given a pixel-wise loss, and that are accepted as realistic
+    by the discriminator.
 
-    In the following we first build the up UNet training process, taking a look at the effects
-    of data augmentation, the choice of loss function, and the UNet architecture.
+    In the following we first build up the U-Net training process, taking a look at the effects
+    of data augmentation, the choice of loss function, and the U-Net architecture. Then the GAN
+    discriminator is introduced and calibrated so that it actually improves the training. This 
+    turned out to require quite careful tuning of the discriminator parameters. We then look at the
+    effects that the additional regularization has on the sample efficiency of the U-Net. Finally, 
+    some shortcomings of the current approach are discussed and an outlook on possible future work 
+    is given.
 
-    \section{UNet}
-    In this section the basic UNet model upon which the discriminator loss extension will be based,
+    \section{U-Net}
+
+    In this section the basic U-Net model upon which the discriminator loss extension will be based,
     is developed. Several experiments are performed to find good settings for data augmentation, the
-    loss function and the network architecture. Due to the high amount of hyperparameters, a 
-    comparison of all possible settings is not possible. Instead, one aspect is varied and optimized
-    while the others are kept fixed.
+    loss function and the network architecture. Due to the high amount of hyperparameters, a
+    comparison of all possible settings is not possible. Instead, one aspect (number of layers,
+    loss function, data augmentation pipeline, \ldots) is varied and optimized while the others are
+    kept fixed.
+
+    \subsection{Architecture}
+    The U-net architecture consists of resolution decreasing downward blocks, followed by resolution
+    increasing upwards blocks. To improve the spatial precision, each upward block gets  as input
+    both the result of the preceding block, and that of the corresponding downward block at the same
+    resolution. As a downward block two convolutions with $3\times3$ receptive field are followed by
+    a $2\times2$ max-pooling. With each deeper layer the  number of feature maps doubles. The
+    convolutions are padded such that the resulting feature map has the same resolution as the
+    original one.
+
+    When increasing the spatial size of a feature layer by deconvolutions, the network is
+    prone to generate so-called checkboard artifacts \cite{odena2016deconvolution}. While the 
+    supervised nature of the U-Net training suppressed these problems, we still investigate whether
+    performance can be improved by using a model inherently resistent to these effects. For that
+    the deconvolutions are replaced by an upscaling, followed by a regular convolution. 
+
+    The effects of different network depths (measured as the number of downward convolution blocks),
+    and the choice of upscaling instead of deconvolution, are shown in figure~\ref{fig:arch}. As the
+    results are only marginally different, the depth-4 upscaling network is chosen, as it may have
+    additional, unused modelling capacity that could become useful when the additional loss is
+    introduced below.
+
+    \begin{figure}[tbp]
+        \begin{subfigure}[c]{\linewidth}
+            \includegraphics[width=\linewidth]{figures/arch.pdf}
+            \caption{IoU}
+        \end{subfigure}
+        \begin{subfigure}[c]{\linewidth}
+            \includegraphics[width=\linewidth]{figures/arch_xent.pdf}
+            \caption{Cross-entropy}
+        \end{subfigure}
+        \caption{Comparison of different network architectures in terms of segmentation IoU and
+        cross entropy. The performance of the different settings is comparable, except for the 
+        4 layer deconvolution network. This may indicate an overfitting problem that can be
+        prevented by either less parameters (depth 3) or by imposing additional structure on the 
+        generation process (upscaling). The training loss is cross entropy and full data
+        augmentation as described in the text has been used.}
+        \label{fig:arch}
+    \end{figure}
 
     \subsection{Data augmentation}
     Since there are only very few cell images and corresponding segmentations avaiable it is 
@@ -59,29 +107,29 @@
 
     The original cell images are given as 512 by 512 grayscale pixels. To reduce memory consumption
     these images are randomly cropped to $256\times256$. To increase the training set the images are
-    randomly flipped (left-right and up-down) and rotated by multiples of 90 degrees. To further
-    increase the variability in the  images the contrast is reduced by a random factor in the range
-    $[0.25, 1]$. These images are then downsampled to $128\times128$ to reduce the class imbalance.
-    For cell images this corresponds to a $2\times2$ average pooling, whereas  the binary
-    segmentation images are resized with max pooling.
+    randomly flipped (left-right and up-down) and rotated by multiples of 90 degrees, and the
+    variability is further increased by random reductions of the image contrast by a factor in the
+    range $[0.25, 1]$. These images are then downsampled to $128\times128$ to reduce the class
+    imbalance. For cell images this corresponds to a $2\times2$ average pooling, whereas the binary
+    segmentation images are resized with max pooling to preserve the binary structure.
 
     The positions of the cell boundaries may not be specified pixel-precise by the cell images. To 
     penalize shifts of the order of a few pixels not as much as missing boundary classification, one 
     can replace to hard, binary classification ground truth with a slightly blurred version (
     Gaussian filter with $\sigma=1$). To ensure that the central portion of the cell boundary still
     gets classified as $100\%$ cell boundary, the original ground truth is added to the blurred 
-    version, and clipped at $1$.
+    version, with the result clipped at $1$.
 
     An even stronger increase in image variability can be archieved when the changes in contrast are
     not applied homogenously to the image (in which case they can mostly be reverted by an  image
     standartization), but with a locally varying strength. For this a 16 by 16 mask is created and
     upscaled to the full image size, blurred, and then used to interpolate between the image and a
     version whose contrast has been reduced to $10\%$ of the original value. The same approach can
-    be used to apply local variations in image brightness. This can be seen in
+    be used to apply local variations in image brightness. An example can be seen in
     figure~\ref{fig:augmentimage}.
 
     The effectiveness of this augmentation is demonstrated in figure~\ref{fig:augment}. Note that we
-    cannot directly compare the effects on the  evaluation loss, as the blurring of segmentations
+    cannot directly compare the effects on the evaluation loss, as the blurring of segmentations
     affects the loss calculation.
 
     \begin{figure}[tbp]
@@ -123,11 +171,10 @@
     are 9 times more black pixels than white, $\bar{w}=0.1$ and white pixels are weighted 9 times 
     stronger than black pixels.
 
-    As demonstrated in figure~\ref{fig:mse} the cross-entropy based training seems to slightly, but
-    consistently, outperform the mean-squared-error approach. However, it must be noted that the 
-    tests where performs with the same learning rate, so fine-tuning for the speicific loss function 
-    might be able to improve the results. Still, we takes this as enough of an indication to use the
-    cross-entropy loss for all further considerations.
+    As demonstrated in figure~\ref{fig:mse} the cross-entropy and mse based training do perform
+    about equally. Their difference is significantly smaller than the variability between runs. In
+    the following we will use the cross-entropy loss, allowing for a probabilistic interpretation
+    of the resulting segmentations.
 
     \begin{figure}[tbp]
         \begin{center}
@@ -135,76 +182,67 @@
         \end{center}
         \caption{Comparison of learning progress using the cross entropy and mean squared error 
         losses. White pixels (cell boundaries) are weighted more strongly than black pixels. 
-        Cross-entropy consistently exceeds MSE in performance.}
+        Within the given error bounds, both loss functions result in equivalent performance.}
         \label{fig:mse}
-    \end{figure}
-
-    \subsection{Architecture}
-    The Unet architecture consists of resolution decreasing downward blocks, followed by resolution
-    increasing upwards blocks. To improve the spatial precision, each upward block gets  as input
-    both the result of the preceding block, and that of the corresponding downward block at the same
-    resolution. As a downward block two convolutions with $3\times3$ receptive field are followed by
-    a $2\times2$ max-pooling. With each deeper layer the  number of feature maps doubles. The
-    convolutions are padded such that the resulting feature map has the same resolution as the
-    original one.
-
-    When increasing the spatial size of a feature layer by deconvolutions, the network is
-    prone to generate so-called checkboard artifacts \cite{odena2016deconvolution}. While the 
-    supervised nature of the UNet training suppressed these problems, we still investigate whether
-    performance can be improved by using a model inherently resistent to these effects. For that
-    the deconvolutions are replaced by an upscaling, followed by a regular convolution. 
-
-    The effects of different network depths (measured as the number of downward convolution blocks),
-    and the choice of upscaling instead of deconvolution, are shown in figure~\ref{fig:arch}. As the
-    results are only marginally different, the depth-4 network is chosen, as it may have additional,
-    unused modelling capacity that could become useful when the additional loss is introduced below.
-
-    \begin{figure}[tbp]
-        \begin{subfigure}[c]{\linewidth}
-            \includegraphics[width=\linewidth]{figures/arch.pdf}
-            \caption{IoU}
-        \end{subfigure}
-        \begin{subfigure}[c]{\linewidth}
-            \includegraphics[width=\linewidth]{figures/arch_xent.pdf}
-            \caption{Cross-entropy}
-        \end{subfigure}
-        \caption{Comparison of different network architectures in terms of segmentation IoU and
-        cross entropy. It turns out that the precise choice of network architecture does not 
-        have a significant influence on the performance.}
-        \label{fig:arch}
     \end{figure}
 
     \section{Regularisation by Discriminator}
 
+    \subsection{Architecture}
     \begin{figure}[tbp]
         \begin{center}
         \input{figures/sketch}
         \end{center}
-        \caption{Architecture of the UNet. Bold arrows indicate weight updates by gradient descent. 
-        The UNet loss $L\ix{U}$ is based on a (pixel wise) comparison of $B$ and $B^{\prime}$. The
+        \caption{Architecture of the U-Net. Bold arrows indicate weight updates by gradient descent. 
+        The U-Net loss $L\ix{U}$ is based on a (pixel wise) comparison of $B$ and $B^{\prime}$. The
         discrimination losses are based on the discrimination results $d\ix{r} = D(B)$, 
         $d\ix{g}=D(B^{\prime})$. They are $L\ix{g, c} = \mathrm{xent}(d\ix{g}, 1)$, 
         $L\ix{d, f} = \mathrm{xent}(d\ix{g}, 0)$ and $L\ix{d, r} = \mathrm{xent}(d\ix{r}, 1)$.}
         \label{fig:unet_dics}
     \end{figure}
     
-    The UNet architcture above is now supplemented with a discriminator network to further refine
+    The U-Net architcture above is now supplemented with a discriminator network to further refine
     the generated segmentations as shown in figure~\ref{fig:unet_dics}. The disciminator follows the
     architecture used in DCGANs \cite{dcgan}, i.e. it consists of blocks of a convolution followed
-    by BatchNorm followed by a leaky ReLU. Since the UNet is fully convolutional and thus can act on
-    input images of arbitrary size, it made sense to also construct a fully convolutional
+    by BatchNorm followed by a leaky ReLU. Since the U-Net is fully convolutional and thus can act
+    on input images of arbitrary size, it made sense to also construct a fully convolutional
     discriminator, which is achieved by the last layer being a global average pooling into a single
     unit.
 
-    Unfortunately the discriminator training is very unstable. This can be seen in
-    figure~\ref{fig:gan_adam}. While initially better the UNet+GAN combination at about $5000$
-    steps. This corresponds to a decrease in the discriminator loss and an \emph{increase} in the
-    generator loss -- it appears that the discriminator becomes to successfull. Replacing its 
-    optimizer with the much slower SGD (with momentum $0.9$) does precent the instability, but also
-    no longer shows the improved performance in the early stages of learning. 
+    As we want to train the discriminator on images that look somewhat realistic, 
+    we only start training it after having trained the U-Net for 500 steps. The generator loss, in 
+    turn, is only sensible for a sensible discriminator, so this additional loss is only enabled 
+    after 750 steps. 
 
-    Even with 
-    significantly increased learning rate ($1e-4$ instead of $5e-5$) the discriminator remains  
+    The loss function for the generator consists of a cross entropy loss that makes the generator
+    try to fool the discriminator, and a feature matching loss that tries to ensure that the
+    features in the hidden layers of the discriminator follow the same statics (in this case mean),
+    independently of whether the input comes from a real segmentation of from a generated one
+    \cite{salimans2016improved}. The effect of the feature matching loss can be seen in 
+    figure~\ref{fig:gan_fm}. 
+
+     \begin{figure}[tbp]
+        \begin{center}
+        \includegraphics[width=\linewidth]{figures/no_fm.pdf}
+        \end{center}
+        \caption{Comparison of learning progress with and without feature matching. All other 
+        parameters are identical to those in the most successful model.}
+        \label{fig:gan_fm}
+    \end{figure}
+
+    This loss is weighted with a factor $\lambda$ and then added to the pixel-wise U-Net loss for 
+    training of the U-Net parameters.
+
+    \subsection{Stabilizing the Training}
+
+    Unfortunately the discriminator training can be very unstable. For a setting in which the GAN is
+    supposed to only influence the training slightly $\lambda=0.1$, this results in a learning curve
+    as depicted in figure~\ref{fig:gan_adam}. Though initially (at about $4000$ steps) better, the
+    U-Net+GAN combination's performance soon starts to deteriorate strongly. This corresponds to a
+    decrease in the discriminator loss and an \emph{increase} in the
+    generator loss figure~\ref{fig:gdloss} -- it appears that the discriminator becomes too
+    successfull. This  increases the generator loss, but the training seems to 1) no be able to
+    reduce the generator  loss further and 2) not produce useful gradients from the discriminator.
 
     \begin{figure}[tbp]
         \begin{center}
@@ -216,63 +254,78 @@
         \label{fig:gan_adam}
     \end{figure}
 
+    A first approach to tackle that problem is by replacing the ADAM optimizer in the discriminator
+    by SGD (with momentum $0.9$). In that case the discriminator almost does not improves at all,
+    even if the learning rate is increased to $10^{-3}$ compared to $5\cdot10^{-5}$ in the ADAM
+    case.  It improves stability (figure~\ref{fig:gan_adam}), but also removes the usable signal
+    from the discriminator gradient: The generator loss remains very small (figure~\ref{fig:gdloss})
+    and the IoU is slightly worse than without the GAN regularization.
+
     \begin{figure}[tbp]
         \begin{center}
+        \begin{subfigure}[c]{\linewidth}
         \includegraphics[width=\linewidth]{figures/dloss_sgd_adam.pdf}
+        \label{Discriminator loss}
+        \end{subfigure}
+        \begin{subfigure}[c]{\linewidth}
+        \includegraphics[width=\linewidth]{figures/gloss_sgd_adam.pdf}
+        \label{Generator loss (logarithmic scale)}
+        \end{subfigure}
         \end{center}
-        \caption{Comparison of discriminator losses. SGD does not result in a significant
-        reduction of discriminator loss, making the larning stable but also preventing the GAN from
+        \caption{Comparison of generator and discriminator losses. SGD does not result in a significant
+        reduction of discriminator loss, but the generator loss remains stable. This stabelizes the
+        learning sbut also prevents the GAN from
         providing a helpful training signal.}
-        \label{fig:dloss}
+        \label{fig:gdloss}
     \end{figure}
 
-    The loss function for the generator consists of a cross entropy loss that makes the generator
-    try to fool the discriminator, and a feature matching \cite{salimans2016improved} loss that
-    tries to ensure that the  features in the hidden layers of the discriminator follow the same
-    statics (in this case mean), independently of whether the input comes from a real segmentation
-    of from a generated one. In this case it does not seem to have significant influence on the 
-    learning performance, see figure~\ref{fig:gan_fm}.
+    Therefore, other techniques are needed to ensure a good balance between generator and
+    discriminator. One approach is to stop the discriminator training whenever the generator loss
+    becomes to big, to give the generator a chance to catch up with the discriminator. Another  idea
+    is to increase the relative weight $\lambda$ of the generator loss compared to the U-Net loss
+    and limit the influence of this term by clipping to some upper bound.
+
+    
+
+    The results of these approaches can be seen in figure~\ref{fig:better_gan}, the behaviour of 
+    generator and discriminator is depicted in figure~\ref{fig:better_gan_dgloss}. For 
+    $\lambda=0.25$, $\mathrm{clipping}=0.25$ the GAN approach outperforms the pure U-Net by about 
+    $1\%$ in IoU. 
 
     \begin{figure}[tbp]
         \begin{center}
-        \includegraphics[width=\linewidth]{data/fm.pdf}
+        \includegraphics[width=\linewidth]{figures/disc_more.pdf}
         \end{center}
-        \caption{Comparison of learning progress with and without feature matching.}
-        \label{fig:gan_fm}
+        \caption{Different approaches to balance GAN training. Either by changing the GAN loss 
+        weight $\lambda$ and clipping, or by stopping the discriminator when the generator loss 
+        becomes too high. A well calibrated GAN can improve the U-Net's performance.}
+        \label{fig:better_gan}
     \end{figure}
-
-    Furthermore, since we want to train the discriminator on images that look somewhat realistic, 
-    we only start training it after having trained the UNet for 500 steps. The generator loss, in 
-    turn, is only sensible for a sensible discriminator, so this additional loss is only enabled 
-    after 750 steps. 
-
-    As for the UNet part, there are hyperparameters that need to be tuned. One parameter that turned
-    out to be very important is the learning rate for the discriminator parameters. If this is set 
-    too high, the discriminator becomes good quickly and the generator performance deteriorates.
-    It was chosen to be $5\times10^{-4}$ as this value results in the discriminator loss remaining 
-    approximately constant over the learning process.
-
-    A second parameter is given by the strength of the GAN loss relative to the UNet classification
-    loss. Therefore the generator loss is scaled by an additional parameter lambda. The training 
-    progress for different values of $\lambda$ can be seen in figure~\ref{fig:gan_strength}. For low
-    enough $\lambda$ the gan based approach outperforms the simple UNet. However, the training 
-    becomes more unstable as can be seen be the increased variations in the learning curves.
 
     \begin{figure}[tbp]
         \begin{center}
-        \includegraphics[width=\linewidth]{data/gan_strength.pdf}
+        \begin{subfigure}[c]{\linewidth}
+            \includegraphics[width=\linewidth]{figures/dloss_more.pdf}
+            \caption{Discriminator loss}
+        \end{subfigure}\\
+        \begin{subfigure}[c]{\linewidth}
+             \includegraphics[width=\linewidth]{figures/gloss_more.pdf}
+            \caption{Generator loss}
+        \end{subfigure}
         \end{center}
-        \caption{Comparison of learning progress using different scaling factors for the GAN loss.
-        Having a too strong contribution from the gan makes the training unstable and 
-        deteriorates performance (yellow).}
-        \label{fig:gan_strength}
+        \caption{Discriminator and genreator loss for the same data as in figure~\ref{fig:better_gan}.
+        The generator and discriminator losses of the different methods are very similar, suggesting
+        that the balance of generator and discriminator is only a necessary, but not sufficient
+        condition for the GAN regularization to imporve performance.}
+        \label{fig:better_gan_dgloss}
     \end{figure}
+
 
     Taking a look at the generated images fig.~\ref{fig:unet_vs_ganunet} reveals another problem: 
     The GAN loss seems to cause severe checkerboard artifacts in the generated image. Replacing the
-    deconvolutions in the UNet with upscaling layers fixes this problem. In this case, however, 
+    deconvolutions in the U-Net with upscaling layers fixes this problem. In this case, however, 
     using $\lambda=0.25$ makes the network too sensitive. At $\lambda=0.1$ is produces segmentations
-    that have sharper lines than in the pure UNet approach.
+    that have sharper lines than in the pure U-Net approach.
 
     \begin{figure}[tbp]
         \begin{subfigure}[c]{0.45\linewidth}
@@ -281,85 +334,59 @@
         \end{subfigure} %
         \begin{subfigure}[c]{0.45\linewidth}
             \includegraphics[width=\linewidth]{data/27_seg.png}
-            \caption{Segmentation}
+            \caption{Cell boundaries}
         \end{subfigure} \\
         \begin{subfigure}[c]{0.45\linewidth}
-            \includegraphics[width=\linewidth]{data/27_simple.png}
+            \includegraphics[width=\linewidth]{figures/27_upscaling.png}
             \caption{$\lambda=0$}
         \end{subfigure}%
         \begin{subfigure}[c]{0.45\linewidth}
-            \includegraphics[width=\linewidth]{data/27_0_1.png}
-            \caption{$\lambda=0.1$}
+            \includegraphics[width=\linewidth]{figures/27_gan.png}
+            \caption{$\lambda=0.25$}
         \end{subfigure}\\
         \begin{subfigure}[c]{0.45\linewidth}
-            \includegraphics[width=\linewidth]{data/27_up_0_1.png}
-            \caption{upscaling, $\lambda=0.1$}
+            \includegraphics[width=\linewidth]{figures/27_seg_upscaling.png}
+            \caption{segmentation, \\ $\lambda=0.0$}
         \end{subfigure}%
         \begin{subfigure}[c]{0.45\linewidth}
-            \includegraphics[width=\linewidth]{data/27_up_0_25.png}
-            \caption{upscaling, $\lambda=0.25$}
+            \includegraphics[width=\linewidth]{figures/27_seg_gan.png}
+            \caption{segmentation, $\lambda=0.25$}
         \end{subfigure}
-        \caption{Comparison of resulting image for the UNet and UNet with GAN loss.
+        \caption{Comparison of resulting image for the U-Net ($\lambda=0$) and U-Net with GAN loss.
          The additional discrimination loss causes the segmented cell boundaries
-        to become more crisp, but at the outer regions produces significant checkerboard artifacts.
-        This can be countered by using an upscaling network (last row).
-        Note that the networks detect more lines than are present in the ground truth data.}
+        to become more crisp, but also seems to add some artifacts.
+        The last row shows the resulting segmentations (last row). These show that the improvement 
+        in IoU is not due to a qualitatively better segmentation approach, but due to the better 
+        matching of cell areas resulting from the sharper boundaries.}
         \label{fig:unet_vs_ganunet}
     \end{figure}
 
     Looking at the resulting learning curves figure~\ref{fig:gan_up} shows that the advantage 
-    (in IoU) over pure UNet is smaller than in the deconvolution approach. In particular the 
+    (in IoU) over pure U-Net is smaller than in the deconvolution approach. In particular the 
     $\lambda=0.25$ case reaches a point where there is a hugh performance drop (that might have been
     compensated again if the training had continued).
 
-    \begin{figure}[tbp]
-        \begin{center}
-        \includegraphics[width=\linewidth]{data/gan_up.pdf}
-        \end{center}
-        \caption{IoU over learning steps for different GAN loss weightings $\lambda$ in the
-        case that the UNet uses upscaling instead of deconvolutions. The gain in IoU is lower
-        and higher $\lambda$ leads to deteriorating performance, but the resulting images are
-        visually improved.}
-        \label{fig:gan_up}
-    \end{figure}
-
-    A look into the workings of the GAN is provided in figure~\ref{fig:gan_losses}. The 
-    discriminator loss decreases slowly whereas the generator loss increases, but still remains 
-    significantly under the boundary of $1$ at which it would be clipped. However, this behaviour 
-    suggests that letting the training continue for much longer might reduce in very unstable 
-    results.
-    \begin{figure}[tbp]
-        \begin{subfigure}[c]{\linewidth}
-            \includegraphics[width=\linewidth]{data/gan_disc.pdf}
-            \caption{Discriminator Loss}
-        \end{subfigure}
-        \begin{subfigure}[c]{\linewidth}
-            \includegraphics[width=\linewidth]{data/gan_gen.pdf}
-            \caption{Generator Loss}
-        \end{subfigure}
-        \caption{Losses of discriminator and generator over the learning progress. A strong weighting
-        of the generator loss in the UNet learning makes it more difficult for the discriminator to 
-        reduce its loss.}
-        \label{fig:gan_losses}
-    \end{figure}
-
     \section{Sample Efficiency}
-    A first experiment in sample efficiency can be performed by reducing the training set to only 20
-    images. This drastic resolution to about a sixth of the original training data is handled rather
-    well by the UNet approach. While there is some overfitting and a reduction in IoU, the network
-    still generalizes to the test set and produces reasonable results.
 
-    Adding the GAN loss provides enough regularization to compensate for the lack of training data 
-    -- in fact in sometimes even exceeds to regular UNet on the full dataset, see 
-    figure~\ref{fig:reduced_data}.
+    A first experiment in sample efficiency can be performed by reducing the training set to only 20
+    images. This drastic reduction to about one sixth of the original training data is handled
+    rather well by the U-Net approach. While the IoU becomes significantly reduced, it still remains
+    above $84\%$. The performance levels of after a few thousand steps, whereas for the full data 
+    set 
+
+    Adding the GAN loss improves the results slightly, see figure~\ref{fig:reduced_data}. Note that
+    the same hyperparameters as for the full dataset were used; no fine tuning was performed. 
+
+    This is in line with the previous results that the GAN training improves the stroke of the 
+    cell boundaries, but does not help in detecting more cells.
 
     \begin{figure}[tbp]
         \begin{center}
-        \includegraphics[width=\linewidth]{data/reduced_data.pdf}
+        \includegraphics[width=\linewidth]{figures/less_data.pdf}
         \end{center}
         \caption{IoU when training only on 20 examples, with and without GAN loss. For reference
         also the behaviour on the full training set is shown. In this scenario the additional GAN
-        loss provides a significant improvement.}
+        loss provides some improvement.}
         \label{fig:reduced_data}
     \end{figure}
 
@@ -387,12 +414,12 @@
     As above demonstrated, the GAN loss can be used to improve the training when there are only few
     training examples. Going even further, one could modify the training procedure to only require 
     partially labeled data. For any data point for which no ground truth segmentation exists, the 
-    UNet should still generate a segmentation that the discriminator accepts as ``realistic''. 
+    U-Net should still generate a segmentation that the discriminator accepts as ``realistic''. 
 
 
     \section{Summary}
 
-    A UNet can be used to detect cell boundaries in microscopy images. By aggressive data
+    A U-Net can be used to detect cell boundaries in microscopy images. By aggressive data
     augmentation the training can be further improved. Introducing an additional discriminator loss
     that judges produced segmentations for whether the seem ``realistic'' can further improve the 
     networks performance, but requires some fine-tuning and makes the training process more 
@@ -405,3 +432,4 @@
     \bibliographystyle{plain}
     \bibliography{lit.bib} 
 \end{document}
+
