@@ -90,7 +90,7 @@ def plot_multiple(tag, data, log_source_fn):
 
 os.makedirs("report/figures", exist_ok=True)
 
-if False:
+if True:
     with make_plot("augment"):
         plot_multiple_evals("iou", [("simple_no_extra_aug", "Basic Augmentation"), ("simple", "Full Augmentation")])
         plt.ylim([0.8, 0.95])
@@ -100,59 +100,50 @@ if False:
         plt.ylim([0.8, 0.95])
 
     with make_plot("arch"):
-        plot_multiple_evals("iou", [("simple", "Depth 4"), ("depth3", "Depth 3"), ("upscaling", "Upscaling")])
+        plot_multiple_evals("iou", [("simple", "Deconv 4"),
+                                    ("depth3", "Deconv 3"),
+                                    ("upscaling", "Upscaling 4"),
+                                    ("depth3-ups", "Upscaling 3")])
         plt.ylim([0.8, 0.95])
 
     with make_plot("arch_xent"):
         plt.ylabel('cross entropy')
-        plot_multiple_evals("xent", [("simple", "Depth 4"), ("depth3", "Depth 3"), ("upscaling", "Upscaling")])
+        plot_multiple_evals("xent", [("simple", "Deconv 4"),
+                                     ("depth3", "Deconv 3"),
+                                     ("upscaling", "Upscaling 4"),
+                                     ("depth3-ups", "Upscaling 3")])
 
-    with make_plot("disc_sgd_adam"):
-        plot_multiple_evals("iou", [("upscaling", "No GAN"), ("dlr_1e-3", "SGD"), ("dlr_5e-5_ADAM", "ADAM")])
+    with make_plot("gan_3_opt"):
+        plot_multiple_evals("iou", [("upscaling", "No GAN"),
+                                    ("gan_3_sgd", "SGD"),
+                                    ("gan_3_slow", "ADAM(1e-5)"),
+                                    ("gan_3_fast", "ADAM(1e-4)")])
         plt.ylim([0.8, 0.95])
 
-    with make_plot("disc_lr_sgd"):
-        plot_multiple_evals("iou", [("upscaling", "No GAN"), ("dlr_1e-3", "1e-3"), ("dlr_1e-4", "1e-4")])
-        plt.ylim([0.85, 0.92])
+    with make_plot("gan_3_w"):
+        plot_multiple_evals("iou", [("upscaling", "0.0"),
+                                    ("gan_3_w_0.15", "0.15"),
+                                    ("gan_3_w_0.25", "0.25"),
+                                    ("gan_3_w_0.33", "0.33")])
+        plt.ylim([0.86, 0.94])
 
-    with make_plot("disc_clip"):
-        plot_multiple_evals("iou", [("dlr_5e-5_ADAM", "ADAM"), ("dlr_5e-5_ADAM_clip", "clip"), ("dlr_5e-5_ADAM_noise", "noise")])
-        plt.ylim([0.80, 0.92])
+    with make_plot("gan_4_w"):
+        plot_multiple_evals("iou", [("upscaling", "0.0"),
+                                    ("gan_4_w_0.15", "0.15"),
+                                    ("gan_4_w_0.25", "0.25"),
+                                    ("gan_4_w_0.33", "0.33")])
+        plt.ylim([0.86, 0.94])
 
     with make_plot("dloss_sgd_adam", ylabel="Discriminator loss"):
-        graph_with_error_bars(all_runs_of("dlr_1e-3"), "DiscriminatorLoss/total", "red", "SGD 1e-3")
-        graph_with_error_bars(all_runs_of("dlr_1e-4"), "DiscriminatorLoss/total", "green", "SGD 1e-4")
-        graph_with_error_bars(all_runs_of("dlr_5e-5_ADAM"), "DiscriminatorLoss/total", "black", "ADAM")
-        graph_with_error_bars(all_runs_of("dlr_5e-5_ADAM_clip"), "DiscriminatorLoss/total", "orange", "clip")
-        graph_with_error_bars(all_runs_of("dlr_5e-5_ADAM_noise"), "DiscriminatorLoss/total", "blue", "noise")
+        graph_with_error_bars(all_runs_of("gan_3_w_0.15"), "DiscriminatorLoss/total", "red", "0.15")
+        graph_with_error_bars(all_runs_of("gan_3_w_0.25"), "DiscriminatorLoss/total", "green", "0.25")
+        graph_with_error_bars(all_runs_of("gan_3_w_0.33"), "DiscriminatorLoss/total", "black", "0.33")
 
     with make_plot("gloss_sgd_adam", ylabel="Generator loss"):
         plt.xlim([500, 20000])
-        graph_with_error_bars(all_runs_of("dlr_1e-3"), "GeneratorLoss/total", "red", "SGD 1e-3")
-        graph_with_error_bars(all_runs_of("dlr_5e-5_ADAM"), "GeneratorLoss/total", "black", "ADAM")
-        graph_with_error_bars(all_runs_of("dlr_5e-5_ADAM_clip"), "GeneratorLoss/total", "orange", "clip")
-        graph_with_error_bars(all_runs_of("dlr_5e-5_ADAM_noise"), "GeneratorLoss/total", "blue", "noise")
-
-    with make_plot("disc_more"):
-        plot_multiple_evals("iou",
-                            [("upscaling", "No GAN"),
-                             ("dlr_5e-5_ADAM_clip_0.25", "lambda 0.25"),
-                             ("dlr_5e-5_ADAM_clip_0.5", "lambda 0.5"),
-                             ("dlr_only_0.1", "stop d")])
-        plt.ylim([0.85, 0.95])
-
-    with make_plot("dloss_more"):
-        plot_multiple_runs("DiscriminatorLoss/total", [
-            ("dlr_1e-3", "SGD 1e-3"), ("dlr_5e-5_ADAM_clip_0.25", "lambda 0.25"), ("dlr_5e-5_ADAM_clip_0.5", "lambda 0.5"),
-            ("dlr_only_0.1", "stop d")
-        ])
-
-    with make_plot("gloss_more", ylabel="Generator loss"):
-        plt.xlim([500, 20000])
-        plot_multiple_runs("GeneratorLoss/total", [
-            ("dlr_1e-3", "SGD 1e-3"), ("dlr_5e-5_ADAM_clip_0.25", "lambda 0.25"), ("dlr_5e-5_ADAM_clip_0.5", "lambda 0.5"),
-            ("dlr_only_0.1", "stop d")
-        ])
+        graph_with_error_bars(all_runs_of("gan_3_w_0.15"), "GeneratorLoss/total", "red", "0.15")
+        graph_with_error_bars(all_runs_of("gan_3_w_0.25"), "GeneratorLoss/total", "black", "0.25")
+        graph_with_error_bars(all_runs_of("gan_3_w_0.33"), "GeneratorLoss/total", "orange", "0.33")
 
 with make_plot("less_data"):
     plot_multiple_evals("iou",
