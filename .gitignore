@@ -4,3 +4,11 @@ venv
 result/
 RandomFrames/
 RandomPredictionSet/
+data
+*.aux
+*.bbl
+*.blg
+*.fls
+*.log
+*.out
+*.pyc
