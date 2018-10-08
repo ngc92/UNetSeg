@@ -149,6 +149,22 @@ with make_plot("gloss_gan4", ylabel="Generator loss"):
     graph_with_error_bars(all_runs_of("gan_3_w_0.25"), "GeneratorLoss/total", "blue", "0.25")
     graph_with_error_bars(all_runs_of("gan_3_w_0.33"), "GeneratorLoss/total", "black", "0.33")
 
+with make_plot("dloss_opt", ylabel="Discriminator loss"):
+    plt.xlim([500, 20000])
+    graph_with_error_bars(all_runs_of("upscaling"), "DiscriminatorLoss/total", "red", "No GAN")
+    graph_with_error_bars(all_runs_of("gan_3_sgd"), "DiscriminatorLoss/total", "blue", "SGD")
+    graph_with_error_bars(all_runs_of("gan_3_slow"), "DiscriminatorLoss/total", "black", "ADAM(1e-5)")
+    graph_with_error_bars(all_runs_of("gan_3_fast"), "DiscriminatorLoss/total", "orange", "ADAM(1e-4)")
+
+with make_plot("gloss_opt", ylabel="Generator loss"):
+    plt.xlim([500, 20000])
+    graph_with_error_bars(all_runs_of("upscaling"), "GeneratorLoss/total", "red", "No GAN")
+    graph_with_error_bars(all_runs_of("gan_3_sgd"), "GeneratorLoss/total", "blue", "SGD")
+    graph_with_error_bars(all_runs_of("gan_3_slow"), "GeneratorLoss/total", "black", "ADAM(1e-5)")
+    graph_with_error_bars(all_runs_of("gan_3_fast"), "GeneratorLoss/total", "orange", "ADAM(1e-4)")
+
+
+
 with make_plot("less_data"):
     plot_multiple_evals("iou",
                         [("less_simple", "U-Net"),

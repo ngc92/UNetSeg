@@ -236,7 +236,23 @@
 
     \subsection{Stabilizing the Training}
 
-    Unfortunately the discriminator training can be very unstable. For a setting in which the GAN is
+    Unfortunately the discriminator training can be very unstable, as the training process
+    depends on a balance between discriminator and generator performance. This can be seen in 
+    figure~\ref{fig:gan_3_opt} where the discriminator optimizer is varied.
+
+    \begin{figure}[tbp]
+        \begin{center}
+        \includegraphics[width=\linewidth]{figures/gan_3_opt.pdf}
+        \end{center}
+        \caption{Learning progress for the three block GAN with different optimizers for the
+        discriminator subnetwork. If this is configured properly, the GAN leads to a slight increase
+        in performance compared to the pure U-Net. However, if the discriminator is learning too 
+        fast, performance deteriorates severely. Not, however, that during earlier stages of learning,
+        the strongly learned discriminator actually outperforms the other approaches.}
+        \label{fig:gan_3_opt}
+    \end{figure}
+
+    For a setting in which the GAN is
     supposed to only influence the training slightly $\lambda=0.1$, this results in a learning curve
     as depicted in figure~\ref{fig:gan_adam}. Though initially (at about $4000$ steps) better, the
     U-Net+GAN combination's performance soon starts to deteriorate strongly. This corresponds to a
