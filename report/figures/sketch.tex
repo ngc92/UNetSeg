@@ -1,0 +1,75 @@
+%\tikzstyle{neuron} = [draw, circle, text centered, text width=0.75cm, minimum height=0.5cm, fill=white]
+
+\pgfdeclarelayer{background}
+\pgfdeclarelayer{foreground}
+\pgfsetlayers{background,foreground}
+
+\begin{tikzpicture}[node distance=1.5cm, auto]
+    \begin{pgfonlayer}{foreground}
+        \node (A) {$A$};
+        \node [below of=A] (B) {$B$};
+        \node [right of=A] (unet) {UNet};
+        \node [right of=unet] (fake) {$B^{\prime}$};
+
+        \node [right of=fake, circle, fill=white, yshift=-0.8cm] (disc) {D};
+        \node [right of=disc, yshift=0.6cm, xshift=-0.5cm] (fakec) {$d_{\mathrm{g}}$};
+        
+        \node [right of=disc, yshift=-0.6cm, xshift=-0.5cm] (realc) {$d_{\mathrm{r}}$};
+        \node [right of=realc, xshift=-0.5cm] (Ldr) {$L_{\mathrm{d, r}}$};
+
+        \node [above of=fakec] (Lgc) {$L_{\mathrm{g, c}}$};
+        \node [right of=fakec, xshift=-0.5cm] (Ldf) {$L_{\mathrm{d, f}}$};
+
+        \node [draw, circle, inner sep=1.0pt] (Ld) at ($(Ldr)!0.5!(Ldf)$) {$+$};
+
+        \node [above right=0.4cm and 0.0cm of fake.east] (xent) {$L_{\mathrm{U}}$};
+        \node at (xent|-Lgc) [draw, circle, fill=white, inner sep=1.0pt] (Lg) {$+$};
+
+    \end{pgfonlayer}
+
+    \begin{pgfonlayer}{background}
+        % Data flow: UNet path
+        \draw[->] (A) -- (unet) -- (fake);
+        \draw[->] (fake) -- (fake|-xent) -- (xent);
+        \draw[->] (xent|-B) -- (xent);
+        \node at (xent|-B) [circle,fill,inner sep=1.0pt]{};
+        \draw[->] (xent) -- (Lg);
+
+        % Data flow: Generator path
+        \draw[->] (fake) -- ([xshift = -0.5cm]disc.center|-fake);
+        \draw[->] ([xshift=0.4cm]disc.center) -- (fakec);
+        \draw[->] (fakec) -- (Lgc);
+        \draw[->] (fakec) -- (Ldf);
+
+        % Data flow: Discriminator path
+        \draw[->] (B) -- ([xshift = -0.5cm]disc.center|-B);
+        \draw[->] ([xshift=0.4cm]disc.center) -- (realc);
+        \draw[->] (realc) -- (Ldr);
+        \draw[->] (Ldr) -- (Ld);
+        \draw[->] (Ldf) -- (Ld);
+        
+
+        % The UNet Symbol
+        \draw[fill=white] (unet) -- ++ (-1, -0.9) -- ++ (0, 1.8) -- (unet);
+        \draw[fill=white] (unet) -- ++ (+1, -0.9) -- ++ (0, 1.8) -- (unet);
+
+        \draw [->] (unet) ++ (-0.5, +0.5) -- ++ (1, 0);
+        \draw [->] (unet) ++ (-0.5, -0.5) -- ++ (1, 0);
+
+        % The discriminators
+        \draw[fill=white] (disc) ++ (+0.5, 0) -- ++ (-1, -1.0) -- ++ (0, 2.0) -- cycle;
+       
+        \draw (Ld.east) -- ++ (0.2, 0) -- ++ (0, -1.1) -- ++ (-1.8, 0);
+        \draw[->, thick] (Ld.east) ++ (-1.6, -1.1) -- ([xshift=-0.7cm, yshift=0.3cm]disc.center);
+    \end{pgfonlayer}
+
+    % The update lines need to be in the foreground
+    \begin{pgfonlayer}{foreground}
+        \draw (Lgc.west) -- ([xshift=0.5cm]unet|-Lgc.west);
+        \draw[->, thick] ([xshift=0.5cm]unet|-Lgc.west) -- ++ (-1.7, -1.7);
+
+        % for some reason this needs to be redrawn here!
+        \node at (xent|-Lgc) [draw, circle, fill=white, inner sep=1.0pt] (Lg) {$+$};
+    \end{pgfonlayer}
+
+\end{tikzpicture}
