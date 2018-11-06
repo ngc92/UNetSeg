@@ -2,6 +2,7 @@ import os, json
 import numpy as np
 from unet.cell_segmentation import CellSegmentationConfig, CellSegmentationModel, InputConfig
 from collections import namedtuple
+from easydict import EasyDict
 
 from unet.summary import get_scalars_from_event
 
@@ -22,8 +23,10 @@ def input_cfg(local_aug, blurring, data_amount=-1):
 
 
 def seg_cfg(resize=False, num_layers=4, xent_w=1.0, mse_w=0.0, multiscale=1, disc_w=0.0,
-            fm=0.9, disc_lr=5e-4, disc_opt="ADAM", disc_noise=None):
-    return CellSegmentationConfig(num_layers, 32, resize, xent_w, mse_w, multiscale, disc_w, fm, disc_lr,
+            fm=0.9, disc_lr=5e-4, disc_opt="ADAM", disc_noise=None, discriminator="make_discriminator"):
+    generator_config = EasyDict(layers=num_layers, features=32, data_format="channels_first", use_upsampling=resize)
+    disc_config = EasyDict(Discriminator=discriminator, layers=3, data_format="channels_first")
+    return CellSegmentationConfig(generator_config, disc_config, xent_w, mse_w, multiscale, disc_w, fm, disc_lr,
                                   NUM_STEPS, disc_opt, disc_noise)
 
 
@@ -63,6 +66,9 @@ configurations = [
     # show utility of feature matching
     FExpConfig("gan_3_no_fm", seg_cfg(num_layers=3, resize=True, disc_w=0.25, disc_lr=5e-5, disc_opt="ADAM", fm=0.0)),
 
+    # conditioned discriminator
+    FExpConfig("gan_4_w_0.25", seg_cfg(num_layers=4, resize=True, disc_w=0.25, disc_lr=5e-5,
+                                       discriminator="make_conditioned_discriminator")),
 
     ExpConfig("less_simple", input_cfg(True, True, 20), seg_cfg(), 10*EPOCHS_PER_EVAL),
     ExpConfig("less_gan", input_cfg(True, True, 20), seg_cfg(resize=True, disc_w=0.25, disc_lr=5e-5, disc_opt="ADAM"),

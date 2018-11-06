@@ -11,10 +11,33 @@ def _image_format(image, data_format):
 
 
 def make_discriminator(layers, data_format="channels_last"):
-    def discriminator(image, is_training=True):
+    def discriminator(image, reference, is_training=True):
         image, channel_index = _image_format(image, data_format)
 
         hidden = image
+        features = []
+        for layer in range(layers):
+            hidden = tf.layers.conv2d(hidden, 64 * 2**layer, kernel_size=4, strides=2, name="conv%i" % layer,
+                                      data_format=data_format)
+            if layer > 0:
+                hidden = tf.layers.batch_normalization(hidden, training=is_training, name="batchnorm%i" % layer,
+                                                       axis=channel_index)
+
+            hidden = tf.nn.leaky_relu(hidden)
+            features += [hidden]
+
+        final = tf.reduce_mean(hidden, [1, 2, 3])
+        return final, features[1:]
+
+    return discriminator
+
+
+def make_conditioned_discriminator(layers, data_format="channels_last"):
+    def discriminator(image, reference, is_training=True):
+        image, channel_index = _image_format(image, data_format)
+        reference, channel_index = _image_format(reference, data_format)
+
+        hidden = tf.concat(image, reference, axis=channel_index)
         features = []
         for layer in range(layers):
             hidden = tf.layers.conv2d(hidden, 64 * 2**layer, kernel_size=4, strides=2, name="conv%i" % layer,

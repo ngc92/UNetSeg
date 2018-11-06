@@ -1,5 +1,6 @@
 from collections import namedtuple
 from im2im_records import load_tf_records, preprocess
+from easydict import EasyDict
 
 from unet.discriminator import make_discriminator, discrimination_loss, generation_loss
 from unet.loss import multiscale_loss
@@ -18,9 +19,8 @@ InputConfig = namedtuple("InputConfig",
                           "take_only"])  # default: -1 -- all
 
 CellSegmentationConfig = namedtuple("CellSegmentationConfig",
-                                    ["num_layers",  # UNET params
-                                     "num_features",
-                                     "resize_up",
+                                    ["generator",  # an EasyDict,
+                                     "discriminator",  # an EasyDict
                                      "xent_weight",  # Loss params 0.1
                                      "mse_weight",  # 1.0
                                      "multi_scale_depth",  # 3
@@ -34,12 +34,27 @@ CellSegmentationConfig = namedtuple("CellSegmentationConfig",
                                     )
 
 
+def call_function_from_dict(module, name, argument_dict, default=None):
+    from copy import copy
+
+    argument_dict = copy(argument_dict)
+    if name not in argument_dict:
+        argument_dict.name = default
+    fn_name = argument_dict.get(name)
+    fn = getattr(module, fn_name)
+    del argument_dict[name]
+    return fn(**argument_dict)
+
+
 class CellSegmentationModel:
     def __init__(self, checkpoint_path, icfg: InputConfig, cfg: CellSegmentationConfig):
+        from unet import discriminator as discriminator_module
+
         self._ckp_path = checkpoint_path
         self.input_config = icfg
         self.config = cfg
-        self.unet_gen = make_unet_generator(cfg.num_layers, cfg.num_features, "channels_first", cfg.resize_up)
+        self.unet_gen = make_unet_generator(**cfg.generator)
+        self.disc = call_function_from_dict(discriminator_module, "Discriminator", cfg.discriminator, "make_discriminator")
 
     def make_input(self, source_file, batch_size=None, reps=1, is_training=False, threads=-1):
         cfg = self.input_config
@@ -255,16 +270,16 @@ class CellSegmentationBuilder:
                                           loss=total_los, eval_metric_ops=self._evals,
                                           train_op=train_step)
 
-    def _gan_loss(self, features, train_or_eval):
-        disc = make_discriminator(3, "channels_first")
+    def _gan_loss(self, features, train_or_eval: bool):
+        disc = self.model.disc
         with tf.variable_scope("Discriminator"):
-            gfinal, gfeatures = disc(self._gen_image, train_or_eval)
+            gfinal, gfeatures = disc(self._gen_image, features["A/image"], train_or_eval)
         pgen = tf.nn.sigmoid(gfinal)
         self._predictions["p_gen"] = pgen
 
         # we also want to add the image gradient of the discriminator to the prediction results.
         with tf.variable_scope("Discriminator", reuse=True):
-            rfinal, rfeatures = disc(features["B/image"], train_or_eval)
+            rfinal, rfeatures = disc(features["B/image"], features["A/image"], train_or_eval)
 
         gen_loss = generation_loss(fake_logits=gfinal, fake_features=gfeatures, real_features=rfeatures,
                                    feature_matching_weight=self.model.config.feature_matching,
