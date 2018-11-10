@@ -6,6 +6,9 @@ from statsmodels.nonparametric.api import KernelReg
 import matplotlib.pyplot as plt
 
 
+TRAINING_DURATION = 25000
+
+
 def plot_mean_and_CI(steps, mean, lb, ub, color_mean=None, color_shading=None, label=None):
     # plot the shaded range of the confidence intervals
     plt.fill_between(steps, ub, lb,
@@ -47,7 +50,7 @@ def graph_with_error_bars(sources, tag, color, label=None):
     assert len(all_vals) > 0
 
     model = KernelReg(endog=[all_vals], exog=[all_steps], var_type='c')
-    steps = np.linspace(0, 20000, 100)
+    steps = np.linspace(0, TRAINING_DURATION, 100)
     mean, mfx = model.fit(steps)
     mean_at, _ = model.fit(all_steps)
     errors_sq = (all_vals - mean_at)**2
@@ -65,7 +68,7 @@ def make_plot(name, xlabel="steps", ylabel="IoU"):
     fig = plt.figure()
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
-    plt.xlim([0, 20000])
+    plt.xlim([0, TRAINING_DURATION])
     yield
     plt.legend()
     plt.grid(True)
@@ -152,13 +155,13 @@ os.makedirs("report/figures", exist_ok=True)
 #    graph_with_error_bars(all_runs_of("gan_3_w_0.33"), "GeneratorLoss/total", "black", "0.33")
 #
 with make_plot("dloss_opt", ylabel="Discriminator loss"):
-    plt.xlim([500, 20000])
+    plt.xlim([500, TRAINING_DURATION])
     graph_with_error_bars(all_runs_of("gan_3_sgd"), "DiscriminatorLoss/total", "blue", "SGD")
     graph_with_error_bars(all_runs_of("gan_3_slow"), "DiscriminatorLoss/total", "black", "ADAM(1e-5)")
     graph_with_error_bars(all_runs_of("gan_3_fast"), "DiscriminatorLoss/total", "orange", "ADAM(1e-4)")
 
 with make_plot("gloss_opt", ylabel="Generator loss"):
-    plt.xlim([500, 20000])
+    plt.xlim([500, TRAINING_DURATION])
     graph_with_error_bars(all_runs_of("gan_3_sgd"), "GeneratorLoss/total", "blue", "SGD")
     graph_with_error_bars(all_runs_of("gan_3_slow"), "GeneratorLoss/total", "black", "ADAM(1e-5)")
     graph_with_error_bars(all_runs_of("gan_3_fast"), "GeneratorLoss/total", "orange", "ADAM(1e-4)")

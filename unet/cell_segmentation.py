@@ -116,8 +116,7 @@ class CellSegmentationModel:
 
     def train(self, training_data, reps, input_threads=-1):
         input_fn = lambda: self.make_input(training_data, reps=reps, is_training=True, threads=input_threads)
-        self.make_estimator().train(input_fn,
-                                    max_steps=self.config.max_steps)
+        self.make_estimator().train(input_fn, max_steps=self.config.max_steps)
 
     def eval(self, eval_data, name=None):
         return self.make_estimator().evaluate(lambda: self.make_input(eval_data), name=name)

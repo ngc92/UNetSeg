@@ -4,16 +4,14 @@ from unet.cell_segmentation import CellSegmentationConfig, CellSegmentationModel
 from collections import namedtuple
 from easydict import EasyDict
 
-from unet.summary import get_scalars_from_event
-
 ExpConfig = namedtuple("ExpConfig", ["name", "input", "model", "epochs_per_eval"])
 
 # GLOBAL PARAMS
 BATCH_SIZE = 16
 SCALE_FACTOR = 2
 CROP_SIZE = 256
-NUM_STEPS = 20500
-NUM_RUNS = 5
+NUM_STEPS = 25500
+NUM_RUNS = 10
 EPOCHS_PER_EVAL = 100
 
 
@@ -80,7 +78,8 @@ def train_model(config, model: CellSegmentationModel):
     # if not yet trained: train model
     while model.global_step < NUM_STEPS:
         print(config.name + " steps: ", model.global_step)
-        model.train("train.tfrecords", reps=int(config.epochs_per_eval * (0.2 * np.random.rand() + 0.8)) + 1)
+        next_stepcount = np.ceil((1.0 + model.global_step) / config.epochs_per_eval)
+        model.train("train.tfrecords", reps=int(next_stepcount - model.global_step))
         model.eval("eval.tfrecords")
 
 
