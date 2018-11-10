@@ -67,8 +67,8 @@ configurations = [
     FExpConfig("gan_3_no_fm", seg_cfg(num_layers=3, resize=True, disc_w=0.25, disc_lr=5e-5, disc_opt="ADAM", fm=0.0)),
 
     # conditioned discriminator
-    FExpConfig("gan_4_w_0.25", seg_cfg(num_layers=4, resize=True, disc_w=0.25, disc_lr=5e-5,
-                                       discriminator="make_conditioned_discriminator")),
+    FExpConfig("gan_4_cd", seg_cfg(num_layers=4, resize=True, disc_w=0.25, disc_lr=5e-5,
+                                   discriminator="make_conditioned_discriminator")),
 
     ExpConfig("less_simple", input_cfg(True, True, 20), seg_cfg(), 10*EPOCHS_PER_EVAL),
     ExpConfig("less_gan", input_cfg(True, True, 20), seg_cfg(resize=True, disc_w=0.25, disc_lr=5e-5, disc_opt="ADAM"),
