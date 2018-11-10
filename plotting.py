@@ -164,8 +164,12 @@ with make_plot("gloss_opt", ylabel="Generator loss"):
     graph_with_error_bars(all_runs_of("gan_3_fast"), "GeneratorLoss/total", "orange", "ADAM(1e-4)")
 
 
-
 with make_plot("less_data"):
     plot_multiple_evals("iou",
                         [("less_simple", "U-Net"),
                          ("less_gan", "U-Net+Gan")])
+
+with make_plot("cdisc_4", ylabel="IoU"):
+    plot_multiple_evals("iou", [("gan_4_w_0.25", "reference"),
+                                ("gan_4_cd", "conditioned")])
+    plt.ylim([0.86, 0.94])
