@@ -114,9 +114,12 @@ class CellSegmentationModel:
         except ValueError:
             return 0
 
-    def train(self, training_data, reps, input_threads=-1):
-        input_fn = lambda: self.make_input(training_data, reps=reps, is_training=True, threads=input_threads)
-        self.make_estimator().train(input_fn, max_steps=self.config.max_steps)
+    def train(self, training_data, num_steps, input_threads=-1):
+        input_fn = lambda: self.make_input(training_data, reps=-1, is_training=True, threads=input_threads)
+        estimator = self.make_estimator()
+        num_steps = min(num_steps, self.config.max_steps - self.global_step)
+        print("TRAIN", num_steps)
+        estimator.train(input_fn, steps=num_steps)
 
     def eval(self, eval_data, name=None):
         return self.make_estimator().evaluate(lambda: self.make_input(eval_data), name=name)

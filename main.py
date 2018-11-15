@@ -4,7 +4,7 @@ from unet.cell_segmentation import CellSegmentationConfig, CellSegmentationModel
 from collections import namedtuple
 from easydict import EasyDict
 
-ExpConfig = namedtuple("ExpConfig", ["name", "input", "model", "epochs_per_eval"])
+ExpConfig = namedtuple("ExpConfig", ["name", "input", "model", "steps_per_eval"])
 
 # GLOBAL PARAMS
 BATCH_SIZE = 16
@@ -12,7 +12,7 @@ SCALE_FACTOR = 2
 CROP_SIZE = 256
 NUM_STEPS = 25500
 NUM_RUNS = 10
-EPOCHS_PER_EVAL = 100
+STEPS_PER_EVAL = 500
 
 
 # define a set of configurations that will be run
@@ -32,12 +32,12 @@ good_input = input_cfg(True, True)
 
 
 def FExpConfig(name, model):
-    return ExpConfig(name, good_input, model, epochs_per_eval=EPOCHS_PER_EVAL)
+    return ExpConfig(name, good_input, model, steps_per_eval=STEPS_PER_EVAL)
 
 
 configurations = [
     # use a standard UNet with fixed parameters and vary only the input preprocessing
-    ExpConfig("simple_no_extra_aug", input_cfg(False, False), seg_cfg(), EPOCHS_PER_EVAL),
+    ExpConfig("simple_no_extra_aug", input_cfg(False, False), seg_cfg(), STEPS_PER_EVAL),
     FExpConfig("simple", seg_cfg()),
 
     # test different network sizes and loss functions
@@ -68,18 +68,18 @@ configurations = [
     FExpConfig("gan_4_cd", seg_cfg(num_layers=4, resize=True, disc_w=0.25, disc_lr=5e-5,
                                    discriminator="make_conditioned_discriminator")),
 
-    ExpConfig("less_simple", input_cfg(True, True, 20), seg_cfg(), 10*EPOCHS_PER_EVAL),
+    ExpConfig("less_simple", input_cfg(True, True, 20), seg_cfg(), 10 * STEPS_PER_EVAL),
     ExpConfig("less_gan", input_cfg(True, True, 20), seg_cfg(resize=True, disc_w=0.25, disc_lr=5e-5, disc_opt="ADAM"),
-              10*EPOCHS_PER_EVAL),
+              10 * STEPS_PER_EVAL),
 ]
 
 
-def train_model(config, model: CellSegmentationModel):
+def train_model(config: ExpConfig, model: CellSegmentationModel):
     # if not yet trained: train model
     while model.global_step < NUM_STEPS:
         print(config.name + " steps: ", model.global_step)
-        next_stepcount = np.ceil((1.0 + model.global_step) / config.epochs_per_eval)
-        model.train("train.tfrecords", reps=int(next_stepcount - model.global_step))
+        next_stepcount = np.ceil((1.0 + model.global_step) / config.steps_per_eval) * config.steps_per_eval
+        model.train("train.tfrecords", num_steps=int(next_stepcount) - model.global_step)
         model.eval("eval.tfrecords")
 
 
