@@ -282,7 +282,7 @@
 
     \begin{figure}[tbp]
         \begin{subfigure}[c]{0.45\linewidth}
-            \includegraphics[width=\linewidth]{igures/27_orig.png}
+            \includegraphics[width=\linewidth]{figures/27_orig.png}
             \caption{Cell image}
         \end{subfigure} %
         \begin{subfigure}[c]{0.45\linewidth}
@@ -313,13 +313,11 @@
         \label{fig:unet_vs_ganunet}
     \end{figure}
 
-    Looking at the resulting learning curves \autoref{fig:gan_up} shows that
-    adding the GAN does result in an imporved IoU. However, this does not seem
-    to be caused by detecting more cells, but by refining the cell boundaries.
-    At this point, it is important to note that the ground truth data used
-    here does not have segmentations for ``difficult'' to see cells. Thus, the
-    network learning to detect those would actually result in a lower IoU and
-    higher loss.
+    Looking at the resulting learning curves \autoref{fig:gan_up} shows that adding the GAN does
+    result in an imporved IoU. However, this does not seem to be caused by detecting more cells, but
+    by refining the cell boundaries. At this point, it is important to note that the ground truth
+    data used here does not have segmentations for ``difficult'' to see cells. Thus, the network
+    learning to detect those would actually result in a lower IoU and higher loss.
 
     \begin{figure}[tbp]
         \begin{center}
@@ -334,19 +332,16 @@
 
     \section{Sample Efficiency}
 
-    A first experiment in sample efficiency can be performed by reducing the
-    training set to only 20 images. This drastic reduction to about one sixth
-    of the original training data is handled rather well by the U-Net
-    approach. While the IoU becomes significantly reduced, it still remains
-    above $84\%$. The performance levels out after a few thousand steps,
-    whereas for the full data set the training needs about 20000 steps to
-    complete.
+    A first experiment in sample efficiency can be performed by reducing the training set to only 20
+    images. This drastic reduction to about one sixth of the original training data is handled
+    rather well by the U-Net approach. While the IoU becomes significantly reduced, it still remains
+    above $84\%$. The performance levels out after a few thousand steps, whereas for the full data
+    set the training needs about 20000 steps to complete.
 
-    Adding the GAN loss improves the results slightly, see
-    \autoref{fig:reduced_data}. This is in line with the previous results that
-    the GAN training improves the stroke of the cell boundaries, but does not
-    help in detecting more cells.  Note that the same hyperparameters as for
-    the full dataset were used; no fine tuning was performed.
+    Adding the GAN loss improves the results slightly, see \autoref{fig:reduced_data}. This is in
+    line with the previous results that the GAN training improves the stroke of the cell boundaries,
+    but does not help in detecting more cells.  Note that the same hyperparameters as for the full
+    dataset were used; no fine tuning was performed.
 
     \begin{figure}[tbp]
         \begin{center}
@@ -360,52 +355,44 @@
 
 
     \section{Discussion and Further Work}
-    A significant problem in training and evaluation the segmentations is due
-    to the quality of the ground truth data. As the network becomes good it
-    starts to (correctly) mark more cell boundaries at the outer fringes of
-    the cell image. However, these lines are not part of the ground-truth data
-    (because the quality of the original image in these regions is really
-    low), so the cross-entropy loss will train the network to not detect these
-    boundaries. See for example the left side of the images in
-    \autoref{fig:unet_vs_ganunet}.
 
-    This could be alleviated by providing an additional map that contains
-    information about the condidence of the ground truth data -- so that the
-    cross entropy could be weighted less in low confidence regions. For the
-    evaluation procedure this means that it is impossible for the loss to
-    become smaller (or the IoU larger) than some threshold that is determined
-    by the data quality.
+    A significant problem in training and evaluation the segmentations is due to the quality of the
+    ground truth data. As the network becomes good it starts to (correctly) mark more cell
+    boundaries at the outer fringes of the cell image. However, these lines are not part of the
+    ground-truth data (because the quality of the original image in these regions is really low), so
+    the cross-entropy loss will train the network to not detect these boundaries. See for example
+    the left side of the images in \autoref{fig:unet_vs_ganunet}.
 
-    Another possible area of improvement is the data augmentation pipeline.
-    The current augmentations have the advantage of transforming the
-    segmentations pixel precise. If one lifts this restriction, arbitrary
-    rotations and shears, as well as slight scale variations, could be added
-    as preprocessing modifications.
+    This could be alleviated by providing an additional map that contains information about the
+    condidence of the ground truth data -- so that the cross entropy could be weighted less in low
+    confidence regions. For the evaluation procedure this means that it is impossible for the loss
+    to become smaller (or the IoU larger) than some threshold that is determined by the data
+    quality.
 
-    The problem of the GAN favouring hard boundaries, independently of whether
-    a cell exists in the original image at the given position, might be
-    tackled by including the microscopy image in the discriminator. Then the
-    decision of whether a segmentation looks acceptable would be conditioned
+    Another possible area of improvement is the data augmentation pipeline. The current
+    augmentations have the advantage of transforming the segmentations pixel precise. If one lifts
+    this restriction, arbitrary rotations and shears, as well as slight scale variations, could be
+    added as preprocessing modifications.
+
+    The problem of the GAN favouring hard boundaries, independently of whether a cell exists in the
+    original image at the given position, might be tackled by including the microscopy image in the
+    discriminator. Then the decision of whether a segmentation looks acceptable would be conditioned
     on the given input image.
 
-    As above demonstrated, the GAN loss can be used to improve the training
-    when there are only few training examples. Going even further, one could
-    modify the training procedure to only require partially labeled data. For
-    any data point for which no ground truth segmentation exists, the U-Net
-    should still generate a segmentation that the discriminator accepts as
-    ``realistic''.
+    As above demonstrated, the GAN loss can be used to improve the training when there are only few
+    training examples. Going even further, one could modify the training procedure to only require
+    partially labeled data. For any data point for which no ground truth segmentation exists, the
+    U-Net should still generate a segmentation that the discriminator accepts as ``realistic''.
 
 
     \section{Summary}
 
-    A U-Net can be used to detect cell boundaries in microscopy images. By
-    aggressive data augmentation the training can be further improved.
-    Introducing an additional discriminator loss that judges produced
-    segmentations for whether the seem ``realistic'' can further improve the
-    networks performance, but requires some fine-tuning and makes the training
-    process more unstable. In a setting where labelled data is extremely
-    scarce, the regularisation provided by the discriminator becomes more
-    useful.
+    A U-Net can be used to detect cell boundaries in microscopy images. By aggressive data
+    augmentation the training can be improved. Introducing an additional discriminator loss that
+    judges produced segmentations for whether the seem ``realistic'' can further improve the
+    networks performance, but requires some fine-tuning and makes the training process more
+    unstable. In a setting where labelled data is extremely scarce, the regularisation provided by
+    the discriminator becomes more useful.
 
 
 
