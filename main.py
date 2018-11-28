@@ -6,6 +6,9 @@ from easydict import EasyDict
 
 ExpConfig = namedtuple("ExpConfig", ["name", "input", "model", "steps_per_eval"])
 
+TRAIN_FILES = ["abdomen1.tfrecords", "abdomen2.tfrecords", "abdomen3.tfrecords"]
+EVAL_FILES = ["wingdisk.tfrecords"]
+
 # GLOBAL PARAMS
 BATCH_SIZE = 16
 SCALE_FACTOR = 2
@@ -35,43 +38,27 @@ def FExpConfig(name, model):
     return ExpConfig(name, good_input, model, steps_per_eval=STEPS_PER_EVAL)
 
 
+def load_config(filename):
+    with open(filename, "r") as file:
+        configs = json.load(file)
+
+    setting_list = []
+    for key in configs:
+        data = configs[key]
+        setting_list.append(FExpConfig(key, seg_cfg(**data)))
+
+    return setting_list
+
+
 configurations = [
     # use a standard UNet with fixed parameters and vary only the input preprocessing
     ExpConfig("simple_no_extra_aug", input_cfg(False, False), seg_cfg(), STEPS_PER_EVAL),
-    FExpConfig("simple", seg_cfg()),
-
-    # test different network sizes and loss functions
-    FExpConfig("upscaling", seg_cfg(resize=True)),
-    FExpConfig("depth3", seg_cfg(num_layers=3)),
-    FExpConfig("depth3-ups", seg_cfg(num_layers=3, resize=True)),
-    FExpConfig("mse", seg_cfg(xent_w=0.0, mse_w=1.0)),
-
-    # gan configs: vary depths and prefactor
-    FExpConfig("gan_3_w_0.25", seg_cfg(num_layers=3, resize=True, disc_w=0.25, disc_lr=5e-5)),
-    FExpConfig("gan_4_w_0.25", seg_cfg(num_layers=4, resize=True, disc_w=0.25, disc_lr=5e-5)),
-
-    FExpConfig("gan_3_w_0.15", seg_cfg(num_layers=3, resize=True, disc_w=0.15, disc_lr=5e-5)),
-    FExpConfig("gan_4_w_0.15", seg_cfg(num_layers=4, resize=True, disc_w=0.15, disc_lr=5e-5)),
-
-    FExpConfig("gan_3_w_0.33", seg_cfg(num_layers=3, resize=True, disc_w=0.33, disc_lr=5e-5)),
-    FExpConfig("gan_4_w_0.33", seg_cfg(num_layers=4, resize=True, disc_w=0.33, disc_lr=5e-5)),
-
-    # vary discriminator learning rate
-    FExpConfig("gan_3_slow", seg_cfg(num_layers=3, resize=True, disc_w=0.25, disc_lr=1e-5)),
-    FExpConfig("gan_3_sgd", seg_cfg(num_layers=3, resize=True, disc_w=0.25, disc_lr=1e-3, disc_opt="SGD")),
-    FExpConfig("gan_3_fast", seg_cfg(num_layers=3, resize=True, disc_w=0.25, disc_lr=1e-4)),
-
-    # show utility of feature matching
-    FExpConfig("gan_3_no_fm", seg_cfg(num_layers=3, resize=True, disc_w=0.25, disc_lr=5e-5, disc_opt="ADAM", fm=0.0)),
-
-    # conditioned discriminator
-    FExpConfig("gan_4_cd", seg_cfg(num_layers=4, resize=True, disc_w=0.25, disc_lr=5e-5,
-                                   discriminator="make_conditioned_discriminator")),
-
     ExpConfig("less_simple", input_cfg(True, True, 20), seg_cfg(), 10 * STEPS_PER_EVAL),
     ExpConfig("less_gan", input_cfg(True, True, 20), seg_cfg(resize=True, disc_w=0.25, disc_lr=5e-5, disc_opt="ADAM"),
               10 * STEPS_PER_EVAL),
 ]
+
+configurations += load_config("configs.json")
 
 
 def train_model(config: ExpConfig, model: CellSegmentationModel):
@@ -79,15 +66,15 @@ def train_model(config: ExpConfig, model: CellSegmentationModel):
     while model.global_step < NUM_STEPS:
         print(config.name + " steps: ", model.global_step)
         next_stepcount = np.ceil((1.0 + model.global_step) / config.steps_per_eval) * config.steps_per_eval
-        model.train("train.tfrecords", num_steps=int(next_stepcount) - model.global_step)
-        model.eval("eval.tfrecords")
+        model.train(TRAIN_FILES, num_steps=int(next_stepcount) - model.global_step)
+        model.eval(EVAL_FILES)
 
 
 def predict_with_model(config, model: CellSegmentationModel):
     # if not yet existing: make predictions
     result_dir = os.path.join("result", config.name)
     if not os.path.exists(result_dir):
-        pred = model.predict("eval.tfrecords")
+        pred = model.predict(EVAL_FILES)
         os.makedirs(result_dir)
         for p in pred:
             import scipy.misc
