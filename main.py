@@ -10,7 +10,7 @@ TRAIN_FILES = ["abdomen1.tfrecords", "abdomen2.tfrecords", "abdomen3.tfrecords"]
 EVAL_FILES = ["wingdisk.tfrecords"]
 
 # GLOBAL PARAMS
-BATCH_SIZE = 16
+DEFAULT_BATCH_SIZE = 16
 SCALE_FACTOR = 2
 CROP_SIZE = 256
 NUM_STEPS = 25500
@@ -19,8 +19,8 @@ STEPS_PER_EVAL = 500
 
 
 # define a set of configurations that will be run
-def input_cfg(local_aug, blurring, data_amount=-1):
-    return InputConfig(BATCH_SIZE, local_aug, SCALE_FACTOR, CROP_SIZE, blurring, data_amount)
+def input_cfg(local_aug=True, blurring=True, num_samples=-1, batch_size=DEFAULT_BATCH_SIZE):
+    return InputConfig(batch_size, local_aug, SCALE_FACTOR, CROP_SIZE, blurring, num_samples)
 
 
 def seg_cfg(resize=False, num_layers=4, xent_w=1.0, mse_w=0.0, multiscale=1, disc_w=0.0,
@@ -45,20 +45,14 @@ def load_config(filename):
     setting_list = []
     for key in configs:
         data = configs[key]
-        setting_list.append(FExpConfig(key, seg_cfg(**data)))
+        model_data = data.get("model", {})
+        input_data = data.get("data", {})
+        setting_list.append(ExpConfig(key, input_cfg(**input_data), seg_cfg(**model_data), steps_per_eval=STEPS_PER_EVAL))
 
     return setting_list
 
 
-configurations = [
-    # use a standard UNet with fixed parameters and vary only the input preprocessing
-    ExpConfig("simple_no_extra_aug", input_cfg(False, False), seg_cfg(), STEPS_PER_EVAL),
-    ExpConfig("less_simple", input_cfg(True, True, 20), seg_cfg(), 10 * STEPS_PER_EVAL),
-    ExpConfig("less_gan", input_cfg(True, True, 20), seg_cfg(resize=True, disc_w=0.25, disc_lr=5e-5, disc_opt="ADAM"),
-              10 * STEPS_PER_EVAL),
-]
-
-configurations += load_config("configs.json")
+configurations = load_config("configs.json")
 
 
 def train_model(config: ExpConfig, model: CellSegmentationModel):

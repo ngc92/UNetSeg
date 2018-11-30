@@ -1,24 +1,151 @@
 {
-    "simple": {},
-    "upscaling": {"resize": true},
-    "depth3": {"num_layers": 3},
-    "depth3-ups": {"num_layers": 3, "resize": true},
-    "mse": {"xent_w": 0.0, "mse_w": 1.0},
+  "simple_no_extra_aug": {
+    "data": {
+      "local_aug": false,
+      "blurring": false
+    }
+  },
+  "simple": {},
+  "less_simple": {
+    "data": {
+      "num_samples": 20
+    }
+  },
+  "upscaling": {
+    "model": {
+      "resize": true
+    }
+  },
+  "depth3": {
+    "model": {
+      "num_layers": 3
+    }
+  },
+  "depth3-ups": {
+    "model": {
+      "num_layers": 3,
+      "resize": true
+    }
+  },
+  "mse": {
+    "model": {
+      "xent_w": 0.0,
+      "mse_w": 1.0
+    }
+  },
+  "gan_3_w_0.25": {
+    "model": {
+      "num_layers": 3,
+      "resize": true,
+      "disc_w": 0.25,
+      "disc_lr": 5e-5
+    }
+  },
+  "gan_4_w_0.25": {
+    "model": {
+      "num_layers": 4,
+      "resize": true,
+      "disc_w": 0.25,
+      "disc_lr": 5e-5
+    }
+  },
+  "gan_3_w_0.15": {
+    "model": {
+      "num_layers": 3,
+      "resize": true,
+      "disc_w": 0.15,
+      "disc_lr": 5e-5
+    }
+  },
+  "gan_4_w_0.15": {
+    "model": {
+      "num_layers": 4,
+      "resize": true,
+      "disc_w": 0.15,
+      "disc_lr": 5e-5
+    }
+  },
+  "gan_3_w_0.33": {
+    "model": {
+      "num_layers": 3,
+      "resize": true,
+      "disc_w": 0.33,
+      "disc_lr": 5e-5
+    }
+  },
+  "gan_4_w_0.33": {
+    "model": {
+      "num_layers": 4,
+      "resize": true,
+      "disc_w": 0.33,
+      "disc_lr": 5e-5
+    }
+  },
+  "gan_3_slow": {
+    "model": {
+      "num_layers": 3,
+      "resize": true,
+      "disc_w": 0.25,
+      "disc_lr": 1e-5
+    }
+  },
+  "gan_3_sgd": {
+    "model": {
+      "num_layers": 3,
+      "resize": true,
+      "disc_w": 0.25,
+      "disc_lr": 1e-3,
+      "disc_opt": "SGD"
+    }
+  },
+  "gan_3_fast": {
+    "model": {
+      "num_layers": 3,
+      "resize": true,
+      "disc_w": 0.25,
+      "disc_lr": 1e-4
+    }
+  },
+  "gan_3_no_fm": {
+    "model": {
+      "num_layers": 3,
+      "resize": true,
+      "disc_w": 0.25,
+      "disc_lr": 5e-5,
+      "fm": 0.0
+    }
+  },
+  "gan_4_cd": {
+    "model": {
+      "num_layers": 4,
+      "resize": true,
+      "disc_w": 0.25,
+      "disc_lr": 5e-5,
+      "discriminator": "make_conditioned_discriminator"
+    }
+  },
+  "less_gan": {
+    "data": {
+      "num_samples": 20
+    },
+    "model": {
+      "num_layers": 4,
+      "resize": true,
+      "disc_w": 0.25,
+      "disc_lr": 5e-5
+    }
+  },
 
-    "gan_3_w_0.25": {"num_layers": 3, "resize": true, "disc_w": 0.25, "disc_lr": 5e-5},
-    "gan_4_w_0.25": {"num_layers": 4, "resize": true, "disc_w": 0.25, "disc_lr": 5e-5},
-
-    "gan_3_w_0.15": {"num_layers": 3, "resize": true, "disc_w": 0.15, "disc_lr": 5e-5},
-    "gan_4_w_0.15": {"num_layers": 4, "resize": true, "disc_w": 0.15, "disc_lr": 5e-5},
-
-    "gan_3_w_0.33": {"num_layers": 3, "resize": true, "disc_w": 0.33, "disc_lr": 5e-5},
-    "gan_4_w_0.33": {"num_layers": 4, "resize": true, "disc_w": 0.33, "disc_lr": 5e-5},
-
-    "gan_3_slow": {"num_layers": 3, "resize": true, "disc_w": 0.25, "disc_lr": 1e-5},
-    "gan_3_sgd": {"num_layers": 3, "resize": true, "disc_w": 0.25, "disc_lr": 1e-3, "disc_opt": "SGD"},
-    "gan_3_fast": {"num_layers": 3, "resize": true, "disc_w": 0.25, "disc_lr": 1e-4},
-
-    "gan_3_no_fm": {"num_layers": 3, "resize": true, "disc_w": 0.25, "disc_lr": 5e-5, "fm": 0.0},
-    "gan_4_cd": {"num_layers": 4, "resize": true, "disc_w": 0.25, "disc_lr": 5e-5, "discriminator": "make_conditioned_discriminator"}
+  "gan_bigbatch": {
+    "data": {
+      "batch_size": 128
+    },
+    "model": {
+      "num_layers": 4,
+      "resize": true,
+      "disc_w": 0.25,
+      "disc_lr": 5e-5
+    }
+  }
 }
 
