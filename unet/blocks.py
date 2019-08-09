@@ -21,6 +21,8 @@ class DownBlock(keras.layers.Layer):
     def __init__(self, filters, name=None, **kwargs):
         """
         Downward block of the U-Net architecture. Two convolutions followed by a max pooling with stride two.
+        Thererefore, the incoming image size is reduced from `s` to `(s-4) / 2`. Therefore, input images are required
+        to have sizes divisible by two. Calling the layer with an incompatible size causes an assertion to be raised.
         :param filters: Number of filters for the convolutional layers. Both layers will use the same amount of filters.
         :param name: Name of this block. Optional.
         """
@@ -30,6 +32,8 @@ class DownBlock(keras.layers.Layer):
         self.pool = keras.layers.MaxPool2D(pool_size=2, strides=(2, 2))
 
     def call(self, x):
+        tf.debugging.Assert(tf.equal(tf.shape(x)[1] % 2, 0), data=("Input size is not a multiple of two", tf.shape(x), tf.shape(x)[1]), summarize=5)
+        #tf.assert_equal(tf.shape(x)[2] % 2, 0, data=tf.shape(x), message="Input size is not a multiple of two!")
         x = self.conv1(x)
         x = self.conv2(x)
         y = self.pool(x)
@@ -55,7 +59,8 @@ class UpBlock(keras.layers.Layer):
     def __init__(self, filters, use_upscaling=False, name=None, **kwargs):
         """
         The upwards block of the U-Net. This layer expects a tuple as input, where the first element comes from the
-        sequential part of the model and the second entry from the skip connections.
+        sequential part of the model and the second entry from the skip connections. Given an input of size `s` this
+        layer produces an output of size `(s-4) * 2`. This means, in particular, that
         :param filters: Number of filters in the convolutional layers.
         :param use_upscaling: Set to true to use an upsampling followed by a convolution, and to false (default) to use
         a deconvolution as the resolution increasing operation.
