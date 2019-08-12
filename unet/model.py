@@ -6,24 +6,40 @@ from unet.blocks import DownBlock, Bottleneck, UpBlock, OutputBlock
 
 
 class UNetModel(keras.Model):
-    def __init__(self, n_classes, filters=64, use_upscaling=False, *args, **kwargs):
+    def __init__(self, n_classes, filters=64, depth=4, use_upscaling=False, *args, **kwargs):
+        """
+        A U-Net as in []. While the model is fully convolutional and thus not limited to a fixed input size,
+        the structure of the convolution makes only certain input sizes possible. The call method of this model
+        simply applies to U-Net to the input as-is, and will produce an error. For training, it is recommended
+        that you use a fixed image size (e.g. by taking fixed sizes crops). For inference on (almost -- the size
+        must be divisible by two) arbitrarily sizes images, the predict function can be used.
+        :param n_classes: Number of classes in the output image.
+        :param filters: Multiplier for the number of filters used. Each downward block doubles the number of filters.
+        :param use_upscaling: Whether to use deconvolutions (False) or upscaling to increase the image size.
+        """
         super().__init__(*args, **kwargs)
         self._down_blocks = [DownBlock(filters=filters, name="input")]
         self._up_blocks = []
 
-        # FUCKING PYTHON SCOPING: do !NOT! call the loop variable filters!
-        for num_filters in [2*filters, 4*filters, 8*filters]:
+        for num_filters in [2**k * filters for k in range(1, depth)]:
             down_block = DownBlock(filters=num_filters, name="down_%d" % num_filters)
             self._down_blocks.append(down_block)
 
-        self._bottleneck = Bottleneck(filters=16*filters, use_upscaling=use_upscaling)
+        self._bottleneck = Bottleneck(filters=2**depth * filters, use_upscaling=use_upscaling)
 
-        for num_filters in [8*filters, 4*filters, 2*filters]:
+        for num_filters in [2**k * filters for k in reversed(range(1, depth))]:
             self._up_blocks.append(UpBlock(filters=num_filters, name="up_%d" % num_filters, use_upscaling=use_upscaling))
 
         self._out_block = OutputBlock(filters=filters, n_classes=n_classes)
 
     def call(self, inputs, training=None, mask=None):
+        """
+        Applies the U-Net to the input image.
+        :param inputs: A batch of images
+        :param training: Whether to operate in training or inference mode. Activates dropout in the bottleneck layer.
+        :param mask:
+        :return: The segmented image. Note that this is smaller than the input image.
+        """
         skip_connections = []
         x = inputs
         for block in self._down_blocks:
@@ -37,6 +53,16 @@ class UNetModel(keras.Model):
         return self._out_block((x, skip_connections.pop()))
 
     def predict(self, image, padding=False):
+        """
+        Perform segmentation for the given image, which need not have a compatible shape. If padding is set, the image
+        will simple be padded with zeros to the next valid shape. If padding is not set, an incompatible image will be
+        split into four (overlapping) patches of compatible sizes, which will be processes individually and then
+        combined. If padding is set, the image is padded with enough zeros to ensure that the segmentation has the same
+        shape as the input image.
+        :param image: An image or a batch of images. They need not have a shape that is compatible with the U-Net.
+        :param padding: Whether to use zero-padding or
+        :return: The segmented image. 
+        """
         depth = len(self._down_blocks)
         # check for batch dimension
         has_batch = True

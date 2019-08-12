@@ -30,30 +30,6 @@ def thicken():
     return preprocess.Preprocessor(thicken_)
 
 
-def augment_contrast(max_delta=0.0, lower=1.0, upper=1.0):
-    def augment_contrast_(image):
-        if max_delta > 0:
-            image = tf.image.random_brightness(image, max_delta)
-
-        if lower != 1.0 or upper != 1.0:
-            image = tf.image.random_contrast(image, lower, upper)
-        return image
-    return preprocess.Preprocessor(augment_contrast_)
-
-
-def augment_with_noise(strength, seed=None):
-    def augment_with_noise_(image):
-        # individual noise pattern
-        noise_pattern = tf.random_uniform(tf.shape(image), -1, 1, seed=seed)
-
-        # a global noise strength factor
-        noise_strength = tf.truncated_normal((), 0.0, strength, seed=seed)
-
-        offset = noise_pattern * noise_strength
-        return tf.clip_by_value(image + offset, 0.0, 1.0)
-    return preprocess.Preprocessor(augment_with_noise_)
-
-
 def make_noise_pattern(resolution, shape, seed):
     noise_pattern_low = tf.random_uniform([resolution, resolution, 1], 0, 1, seed=seed)
     noise_pattern_up = tf.image.resize_images(noise_pattern_low, shape[0:2])

@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 import pytest
-from unet.models import _get_input_size, _get_output_size, _get_border_size, UNetModel
+from unet.model import _get_input_size, _get_output_size, _get_border_size, UNetModel
 
 
 def test_size_determination():
