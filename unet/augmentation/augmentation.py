@@ -87,8 +87,8 @@ class TransformationProperty:
 
 
 class AugmentationPipeline:
-    def __init__(self):
-        self._transformations = []
+    def __init__(self, transformations):
+        self._transformations = transformations or []
 
     def add_transformation(self, trafo):
         self._transformations.append(trafo)
@@ -115,8 +115,23 @@ class AugmentationPipeline:
             imageio.imwrite(target_folder / ("%03d-mask.png" % i), msk.numpy())
 
     def augmented_dataset(self, source_images, segmentation_images):
+        dataset = self.images_from_list(source_images, segmentation_images, shuffle=True).repeat()
+        return self.augment_dataset(dataset)
+
+    @staticmethod
+    def images_from_list(source_images, segmentation_images, shuffle=True):
+        """
+        Given a list of source images and a list of corresponding ground truth segmentations,
+        builds a `tf.data.Dataset` out of these image pairs.
+        :param source_images: List of paths to the source images.
+        :param segmentation_images: List of paths to the ground truth segmentations.
+        :param shuffle: Whether to shuffle the dataset.
+        :return: A dataset of pairs `(image, ground_truth)`.
+        """
         source_images = list(map(str, source_images))
         segmentation_images = list(map(str, segmentation_images))
+
+        assert len(source_images) == len(segmentation_images)
 
         dataset = tf.data.Dataset.from_tensor_slices((source_images, segmentation_images))
 
@@ -125,8 +140,46 @@ class AugmentationPipeline:
             segmentation = tf.io.decode_image(tf.io.read_file(seg_path))
             return image, segmentation
 
-        dataset = dataset.map(load_image, num_parallel_calls=4).cache().shuffle(len(source_images)).repeat()
+        dataset = dataset.map(load_image, num_parallel_calls=4).cache()
+        if shuffle:
+            return dataset.shuffle(len(source_images))
+        else:
+            return dataset
 
+    @staticmethod
+    def images_from_directories(source_dir, segmentation_dir, shuffle=True, pattern="*.png"):
+        """
+        Given a source an a segmentations folder, this function returns a `tf.data.Dataset` containing
+        all pairs of images. This assumes that the filename in `source_dir` is the same as the
+        corresponding filename in the `segmentation_dir`. Source files for which no segmentation file
+        does not exist wil be ignored.
+        :param source_dir: Directory with the input files.
+        :param segmentation_dir: Directory with the ground truth segmentations.
+        :param shuffle: Whether to shuffle the image. Otherwise they are sorted by file name.
+        :param pattern: File name pattern to select image files. Defaults to `*.png` for png files.
+        :return: A dataset of image pairs, as per `images_from_list`.
+        """
+        source_dir = pathlib.Path(source_dir)
+        seg_dir = pathlib.Path(segmentation_dir)
+
+        sources = []
+        segmentations = []
+        for source in sorted(source_dir.glob(pattern)):
+            segmentation_image = (seg_dir / source)
+            if not segmentation_image.exists():
+                continue
+            sources.append(source)
+            segmentations.append(seg_dir)
+
+        return AugmentationPipeline.images_from_list(sources, segmentations, shuffle=shuffle)
+
+    def augment_dataset(self, dataset: tf.data.Dataset):
+        """
+        Takes as input an image dataset consists of tuples (image, segmentation)
+        (the image tensors have rank 3) or tuples (image, segmentation, mask).
+        :param dataset: The dataset containing augmented images.
+        :return:
+        """
         def process_images(img, seg):
             img = tf.image.convert_image_dtype(img, tf.float32)
             seg = tf.image.convert_image_dtype(seg, tf.float32)
