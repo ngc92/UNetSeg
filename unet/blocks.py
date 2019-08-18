@@ -1,5 +1,5 @@
 import tensorflow as tf
-import tensorflow.keras as keras
+from tensorflow import keras
 
 from unet.layers import Upscale2DConv
 from unet.ops import crop_and_concat
@@ -86,19 +86,19 @@ class Bottleneck(keras.layers.Layer):
 
 
 class OutputBlock(keras.layers.Layer):
-    def __init__(self, filters, n_classes, name="output", activation="relu", **kwargs):
+    def __init__(self, filters, n_channels, name="output", activation="relu", **kwargs):
         """
         Output block of the U-Net. Performs three convolutions, where the last one produces `n_classes` many channels
-        and has a sigmoid nonlinearity.
+        and has no nonlinearity. This means that this layer is intended to output logits.
         :param filters: Number of filters in the first two convolutional layers.
         :param activation: Activation function to use after the non-output convolutions.
-        :param n_classes: Numer of output channels.
+        :param n_channels: Numer of output channels.
         :param name: Name of this block.
         """
         super().__init__(name, **kwargs)
         self.conv1 = keras.layers.Conv2D(filters, kernel_size=3, activation=activation)
         self.conv2 = keras.layers.Conv2D(filters, kernel_size=3, activation=activation)
-        self.conv_out = keras.layers.Conv2D(n_classes, kernel_size=1, activation="sigmoid")
+        self.conv_out = keras.layers.Conv2D(n_channels, kernel_size=1)
 
     def call(self, inputs):
         x, y = inputs

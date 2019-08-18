@@ -93,6 +93,7 @@ class AugmentationPipeline:
     def add_transformation(self, trafo):
         self._transformations.append(trafo)
 
+    @tf.function
     def augment(self, source: tf.Tensor, segmentation: tf.Tensor, mask: tf.Tensor = None):
         if mask is None:
             mask = tf.ones_like(segmentation)
@@ -119,13 +120,15 @@ class AugmentationPipeline:
         return self.augment_dataset(dataset)
 
     @staticmethod
-    def images_from_list(source_images, segmentation_images, shuffle=True):
+    def images_from_list(source_images, segmentation_images, shuffle=True, channels_in=3, channels_out=3):
         """
         Given a list of source images and a list of corresponding ground truth segmentations,
         builds a `tf.data.Dataset` out of these image pairs.
         :param source_images: List of paths to the source images.
         :param segmentation_images: List of paths to the ground truth segmentations.
         :param shuffle: Whether to shuffle the dataset.
+        :param channels_in: Number of channels in the input image.
+        :param channels_out: Number of channels in the segmentation.
         :return: A dataset of pairs `(image, ground_truth)`.
         """
         source_images = list(map(str, source_images))
@@ -136,8 +139,10 @@ class AugmentationPipeline:
         dataset = tf.data.Dataset.from_tensor_slices((source_images, segmentation_images))
 
         def load_image(img_path, seg_path):
-            image = tf.io.decode_image(tf.io.read_file(img_path))
-            segmentation = tf.io.decode_image(tf.io.read_file(seg_path))
+            image = tf.io.decode_image(tf.io.read_file(img_path), channels=channels_in)
+            image.set_shape((None, None, channels_in))
+            segmentation = tf.io.decode_image(tf.io.read_file(seg_path), channels=channels_out)
+            segmentation.set_shape((None, None, channels_out))
             return image, segmentation
 
         dataset = dataset.map(load_image, num_parallel_calls=4).cache()
@@ -147,7 +152,8 @@ class AugmentationPipeline:
             return dataset
 
     @staticmethod
-    def images_from_directories(source_dir, segmentation_dir, shuffle=True, pattern="*.png"):
+    def images_from_directories(source_dir, segmentation_dir, shuffle=True, pattern="*.png",
+                                channels_in=3, channels_out=3):
         """
         Given a source an a segmentations folder, this function returns a `tf.data.Dataset` containing
         all pairs of images. This assumes that the filename in `source_dir` is the same as the
@@ -157,6 +163,8 @@ class AugmentationPipeline:
         :param segmentation_dir: Directory with the ground truth segmentations.
         :param shuffle: Whether to shuffle the image. Otherwise they are sorted by file name.
         :param pattern: File name pattern to select image files. Defaults to `*.png` for png files.
+        :param channels_in: Number of channels in the input image.
+        :param channels_out: Number of channels in the segmentation.
         :return: A dataset of image pairs, as per `images_from_list`.
         """
         source_dir = pathlib.Path(source_dir)
@@ -169,9 +177,10 @@ class AugmentationPipeline:
             if not segmentation_image.exists():
                 continue
             sources.append(source)
-            segmentations.append(seg_dir)
+            segmentations.append(segmentation_image)
 
-        return AugmentationPipeline.images_from_list(sources, segmentations, shuffle=shuffle)
+        return AugmentationPipeline.images_from_list(sources, segmentations, shuffle=shuffle,
+                                                     channels_in=channels_in, channels_out=channels_out)
 
     def augment_dataset(self, dataset: tf.data.Dataset):
         """

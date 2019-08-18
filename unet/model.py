@@ -1,23 +1,28 @@
 import tensorflow as tf
-import tensorflow.keras as keras
+from tensorflow import keras
 import numpy as np
 
 from unet.blocks import DownBlock, Bottleneck, UpBlock, OutputBlock
 
 
 class UNetModel(keras.Model):
-    def __init__(self, n_classes, filters=64, depth=4, use_upscaling=False, *args, **kwargs):
+    def __init__(self, n_channels, filters=64, depth=4, use_upscaling=False, symmetries=None, *args, **kwargs):
         """
         A U-Net as in []. While the model is fully convolutional and thus not limited to a fixed input size,
         the structure of the convolution makes only certain input sizes possible. The call method of this model
         simply applies to U-Net to the input as-is, and will produce an error. For training, it is recommended
         that you use a fixed image size (e.g. by taking fixed sizes crops). For inference on (almost -- the size
         must be divisible by two) arbitrarily sizes images, the predict function can be used.
-        :param n_classes: Number of classes in the output image.
+        :param n_channels: Number of channels in the output image.
         :param filters: Multiplier for the number of filters used. Each downward block doubles the number of filters.
         :param use_upscaling: Whether to use deconvolutions (False) or upscaling to increase the image size.
         """
         super().__init__(*args, **kwargs)
+
+        # TODO there should be support for both regression output and classification output
+        if not isinstance(n_channels, int) or n_channels < 1:
+            raise ValueError("Invalid number of output channels")
+
         self._down_blocks = [DownBlock(filters=filters, name="input")]
         self._up_blocks = []
 
@@ -30,7 +35,19 @@ class UNetModel(keras.Model):
         for num_filters in [2**k * filters for k in reversed(range(1, depth))]:
             self._up_blocks.append(UpBlock(filters=num_filters, name="up_%d" % num_filters, use_upscaling=use_upscaling))
 
-        self._out_block = OutputBlock(filters=filters, n_classes=n_classes)
+        self._out_block = OutputBlock(filters=filters, n_channels=n_channels)
+
+        self._n_channels = n_channels
+        self._depth = depth
+        self._symmetries = symmetries or None
+
+    @property
+    def channels(self):
+        return self._n_channels
+
+    @property
+    def depth(self):
+        return self._depth
 
     def call(self, inputs, training=None, mask=None):
         """
