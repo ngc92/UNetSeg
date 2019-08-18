@@ -49,12 +49,30 @@ class UNetModel(keras.Model):
     def depth(self):
         return self._depth
 
-    def call(self, inputs, training=None, mask=None):
+    @property
+    def symmetries(self):
+        return self._symmetries
+
+    def call(self, inputs, training=None):
         """
         Applies the U-Net to the input image.
         :param inputs: A batch of images
         :param training: Whether to operate in training or inference mode. Activates dropout in the bottleneck layer.
         :param mask:
+        :return: The segmented image. Note that this is smaller than the input image.
+        """
+        logits = self.logits(inputs, training=training)
+        if self._n_channels == 2:
+            return keras.activations.sigmoid(logits)
+        else:
+            return keras.activations.softmax(logits)
+
+    def logits(self, inputs, training=None):
+        """
+        Applies the U-Net to the input image and returns the resulting logits.
+        :param inputs: A batch of images
+        :param training: Whether to operate in training or inference mode. Activates dropout in the bottleneck layer.
+        :param mask: TODO would this even work?
         :return: The segmented image. Note that this is smaller than the input image.
         """
         skip_connections = []
@@ -151,6 +169,9 @@ class UNetModel(keras.Model):
         w_22 = tf.pad(weight, [[0, 0], [ph, 0], [pw, 0], [0, 0]])
 
         return tf.add_n([p_11, p_12, p_21, p_22]) / tf.add_n([w_11, w_12, w_21, w_22])
+
+    def output_size(self, input_size):
+        return int(_get_output_size(input_size, self.depth))
 
 
 def _get_input_size(image_size, depth, crop=True):
