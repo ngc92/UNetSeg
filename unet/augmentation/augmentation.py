@@ -91,7 +91,7 @@ class TransformationProperty:
 
 
 class AugmentationPipeline:
-    def __init__(self, transformations):
+    def __init__(self, transformations: list):
         self._transformations = transformations or []
 
     def add_transformation(self, trafo):
@@ -99,6 +99,9 @@ class AugmentationPipeline:
 
     @tf.function
     def augment(self, source: tf.Tensor, segmentation: tf.Tensor, mask: tf.Tensor = None):
+        assert source.dtype.is_floating, source.dtype
+        assert segmentation.dtype.is_floating, segmentation.dtype
+
         if mask is None:
             mask = tf.ones_like(segmentation)
 
@@ -208,7 +211,7 @@ class AugmentationPipeline:
             img = tf.image.convert_image_dtype(img, tf.float32)
             seg = tf.image.convert_image_dtype(seg, tf.float32)
             if mask is not None:
-                mask = tf.image.convert_image_dtype(mask, tf.float32)
+                mask = 1.0 - tf.cast(tf.equal(mask, 0), tf.float32)
             return self.augment(img, seg, mask)
         return dataset.map(process_images, num_parallel_calls=4)
 

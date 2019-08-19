@@ -77,6 +77,9 @@ class UNetTrainer(tf.Module):
             segmentation = tf.image.resize_with_crop_or_pad(segmentation, tf.shape(image)[1], tf.shape(image)[2])
             if mask is None:
                 mask = tf.ones_like(segmentation)
+            else:
+                mask = self._model.input_mask_to_output_mask(mask)
+
             mask = tf.image.resize_with_crop_or_pad(mask, tf.shape(image)[1], tf.shape(image)[2])
             losses = self.loss(ground_truth, segmentation, mask)
             total_loss = tf.reduce_sum(tf.add_n(list(losses.values())))

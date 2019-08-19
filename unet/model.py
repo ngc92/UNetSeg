@@ -90,6 +90,10 @@ class UNetModel(keras.Model):
         else:
             return keras.activations.softmax(logits)
 
+    def input_mask_to_output_mask(self, input_mask: tf.Tensor):
+        # if mask is 0, 1 - mask is 1 and all pixels touched by this input will be masked.
+        return 1.0 - keras.layers.MaxPooling2D(pool_size=_get_border_size(self.depth), strides=1)(1.0 - input_mask)
+
     def predict(self, image, padding=False):
         """
         Perform segmentation for the given image, which need not have a compatible shape. If padding is set, the image
