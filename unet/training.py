@@ -121,10 +121,13 @@ class UNetTrainer(tf.Module):
 
 
 def default_unet_trainer(model: keras.Model, log_path: pathlib.Path = None):
-    from unet.augmentation import HorizontalFlips, VerticalFlips, Rotation90Degrees
+    from unet.augmentation import HorizontalFlips, VerticalFlips, Rotation90Degrees, FreeRotation, Warp
+    from unet.augmentation.invariances import NoiseInvariance, BrightnessInvariance, ContrastInvariance
     trainer = UNetTrainer(model, keras.optimizers.Adam(), log_path,
                           symmetries=[
-        HorizontalFlips(), VerticalFlips(), Rotation90Degrees()
+                              HorizontalFlips(), VerticalFlips(), Rotation90Degrees(), FreeRotation(),
+                              Warp(1.0, 10.0, blur_size=5),
+                              ContrastInvariance(0.7, 1.1), NoiseInvariance(0.1), BrightnessInvariance(0.1)
     ])
 
     def xent_with_mask(ground_truth, logits, mask):
