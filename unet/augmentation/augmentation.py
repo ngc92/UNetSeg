@@ -110,6 +110,11 @@ class AugmentationPipeline:
         if not isinstance(target_folder, pathlib.Path):
             target_folder = pathlib.Path(target_folder)
 
+        if isinstance(source, (str, pathlib.Path)):
+            source = tf.io.decode_image(tf.io.read_file(str(source)), dtype=tf.float32)
+        if isinstance(segmentation, (str, pathlib.Path)):
+            segmentation = tf.io.decode_image(tf.io.read_file(str(segmentation)), dtype=tf.float32)
+
         if not target_folder.exists():
             target_folder.mkdir()
 
