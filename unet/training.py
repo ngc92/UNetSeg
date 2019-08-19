@@ -1,4 +1,7 @@
 from typing import Optional, TYPE_CHECKING
+import pathlib
+import functools
+from easydict import EasyDict
 
 from tensorflow import keras
 from unet.augmentation import AugmentationPipeline
@@ -8,7 +11,8 @@ if TYPE_CHECKING:
 
 
 class UNetTrainer(tf.Module):
-    def __init__(self, model: "UNetModel", optimizer: keras.optimizers.Optimizer, symmetries=None):
+    def __init__(self, model: "UNetModel", optimizer: keras.optimizers.Optimizer,
+                 summary_dir: pathlib.Path = None, symmetries=None):
         super().__init__()
         self._model = model
         self._augmenter = AugmentationPipeline(symmetries)
@@ -27,13 +31,25 @@ class UNetTrainer(tf.Module):
             self._metrics["segmentation/" + m.name] = m
 
         self._train_step = tf.Variable(0, trainable=False, name="global_step")
-        self._num_epoch = tf.Variable(0, trainable=False, name="epoch")
+        self._num_epoch = tf.Variable(0, dtype=tf.int64, trainable=False, name="epoch")
+
+        if summary_dir is None:
+            summary_dir = pathlib.Path(".logs/unet")
+        else:
+            summary_dir = pathlib.Path(summary_dir)
+
+        self._summary_writers = EasyDict()
+        self._summary_writers.train = tf.summary.create_file_writer(str(summary_dir / 'train'))
 
     def add_loss(self, key: str, loss: callable):
         self._loss_functions["loss/" + key] = loss
         self._metrics["loss/" + key] = keras.metrics.Mean(name=key)
 
     def train_epoch(self, dataset, num_steps=None):
+        with self._summary_writers.train.as_default():
+            self._train_epoch(dataset, num_steps)
+
+    def _train_epoch(self, dataset, num_steps=None):
         augmented_data = self._augmenter.augment_dataset(dataset).batch(1)
         for i, data in enumerate(augmented_data):
             loss, seg = self.train_step(*data)
@@ -101,14 +117,16 @@ class UNetTrainer(tf.Module):
             self._record_metric(k, v)
 
 
-def default_unet_trainer(model: keras.Model):
+def default_unet_trainer(model: keras.Model, log_path: pathlib.Path = None):
     from unet.augmentation import HorizontalFlips, VerticalFlips, Rotation90Degrees
-    trainer = UNetTrainer(model, keras.optimizers.Adam(), [
+    trainer = UNetTrainer(model, keras.optimizers.Adam(), log_path,
+                          symmetries=[
         HorizontalFlips(), VerticalFlips(), Rotation90Degrees()
     ])
 
     def xent_with_mask(ground_truth, logits, mask):
         loss = tf.nn.softmax_cross_entropy_with_logits(ground_truth, logits)
+        loss = tf.nn.sigmoid_cross_entropy_with_logits(ground_truth, logits)
         if mask is not None:
             loss = loss * mask
         return loss

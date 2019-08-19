@@ -10,15 +10,19 @@ model = UNetModel(1, use_upscaling=True)
 trainer = default_unet_trainer(model)
 
 dataset = AugmentationPipeline.images_from_directories(
-    "/home/erik/Desktop/DahmannGroup/Wingdisc/wingdisk_org/wingdisk_grey",
-    "/home/erik/Desktop/DahmannGroup/Wingdisc/wingdisk_seg/wingdisk_seg_grey",
+    "data/train/original",
+    "data/train/segmentation",
     channels_in=1, channels_out=1
 )
 
 
 def padding(image, segmentation):
-    return tf.image.resize_with_crop_or_pad(image, 588, 588), tf.image.resize_with_crop_or_pad(segmentation, 588, 588)
+    mask = tf.ones_like(image)
+    return (tf.image.resize_with_crop_or_pad(image, 588, 588),
+            tf.image.resize_with_crop_or_pad(segmentation, 588, 588),
+            tf.image.resize_with_crop_or_pad(mask, 588, 588))
 
 
 dataset = dataset.map(padding)
-trainer.train_epoch(dataset)
+for _ in range(10):
+    trainer.train_epoch(dataset)
