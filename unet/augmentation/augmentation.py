@@ -1,7 +1,11 @@
 import tensorflow as tf
 import imageio
 import pathlib
+import logging
 import numpy as np
+
+
+_logger = logging.getLogger(__name__)
 
 
 """
@@ -135,6 +139,8 @@ class AugmentationPipeline:
         segmentation_images = list(map(str, segmentation_images))
 
         assert len(source_images) == len(segmentation_images)
+        assert len(source_images) > 0, "No images supplied"
+        _logger.info("Creating dataset with %d images", len(source_images))
 
         dataset = tf.data.Dataset.from_tensor_slices((source_images, segmentation_images))
 
@@ -172,12 +178,16 @@ class AugmentationPipeline:
 
         sources = []
         segmentations = []
-        for source in sorted(source_dir.glob(pattern)):
-            segmentation_image = (seg_dir / source)
+        source_images = sorted(source_dir.glob(pattern))
+        for source in source_images:
+            segmentation_image = (seg_dir / source.name)
             if not segmentation_image.exists():
                 continue
             sources.append(source)
             segmentations.append(segmentation_image)
+
+        if len(sources) != len(source_images):
+            _logger.warn("Found %d source images but only %d matching segmentations", len(source_images), len(sources))
 
         return AugmentationPipeline.images_from_list(sources, segmentations, shuffle=shuffle,
                                                      channels_in=channels_in, channels_out=channels_out)
@@ -189,10 +199,12 @@ class AugmentationPipeline:
         :param dataset: The dataset containing augmented images.
         :return:
         """
-        def process_images(img, seg):
+        def process_images(img, seg, mask=None):
             img = tf.image.convert_image_dtype(img, tf.float32)
             seg = tf.image.convert_image_dtype(seg, tf.float32)
-            return self.augment(img, seg)
+            if mask is not None:
+                mask = tf.image.convert_image_dtype(mask, tf.float32)
+            return self.augment(img, seg, mask)
         return dataset.map(process_images, num_parallel_calls=4)
 
 """

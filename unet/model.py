@@ -62,10 +62,7 @@ class UNetModel(keras.Model):
         :return: The segmented image. Note that this is smaller than the input image.
         """
         logits = self.logits(inputs, training=training)
-        if self._n_channels == 2:
-            return keras.activations.sigmoid(logits)
-        else:
-            return keras.activations.softmax(logits)
+        return self.logits_to_prediction(logits)
 
     def logits(self, inputs, training=None):
         """
@@ -86,6 +83,12 @@ class UNetModel(keras.Model):
             x = block((x, skip_connections.pop()))
 
         return self._out_block((x, skip_connections.pop()))
+
+    def logits_to_prediction(self, logits):
+        if self._n_channels == 1:
+            return keras.activations.sigmoid(logits)
+        else:
+            return keras.activations.softmax(logits)
 
     def predict(self, image, padding=False):
         """

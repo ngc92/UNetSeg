@@ -62,14 +62,16 @@ class UNetTrainer(tf.Module):
             if mask is None:
                 mask = tf.ones_like(segmentation)
             mask = tf.image.resize_with_crop_or_pad(mask, tf.shape(image)[1], tf.shape(image)[2])
-            tf.print(tf.shape(ground_truth))
-            losses = self.loss(segmentation, ground_truth, mask)
-            total_loss = tf.add_n(list(losses.values()))
+            losses = self.loss(ground_truth, segmentation, mask)
+            total_loss = tf.reduce_sum(tf.add_n(list(losses.values())))
+
+            # convert logits to actual segmentation for further processing
+            segmentation = self._model.logits_to_prediction(segmentation)
 
         self._record_metric("loss/total", total_loss)
         self._record_metrics(losses)
         for m in self._seg_metrics:
-            m.update_state(ground_truth, segmentation, mask)
+            m.update_state(ground_truth, segmentation, sample_weight=mask)
 
         grads = tape.gradient(total_loss, self._model.trainable_variables)
         self._optimizer.apply_gradients(zip(grads, self._model.trainable_variables))
@@ -78,14 +80,14 @@ class UNetTrainer(tf.Module):
         return total_loss, segmentation
 
     @tf.function
-    def loss(self, segmentation: tf.Tensor, ground_truth: tf.Tensor, mask: Optional[tf.Tensor]):
-        return {key: loss(segmentation, ground_truth, mask) for key, loss in self._loss_functions.items()}
+    def loss(self, ground_truth: tf.Tensor, segmentation: tf.Tensor, mask: Optional[tf.Tensor]):
+        return {key: loss(ground_truth, segmentation, mask) for key, loss in self._loss_functions.items()}
 
     def summarize(self, step=None):
         step = step or self._num_epoch
 
         # scalar metrics
-        for key, metric in self._metrics:  # type: str, keras.metrics.Metric
+        for key, metric in self._metrics.items():  # type: str, keras.metrics.Metric
             tf.summary.scalar(key, metric.result(), step)
 
         # other relevant data

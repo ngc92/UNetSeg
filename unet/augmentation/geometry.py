@@ -4,7 +4,6 @@ import numpy as np
 
 from unet.augmentation.augmentation import TransformationProperty
 from unet.layers import BlurLayer
-from unet.ops import random_crop_stateless
 
 
 class MaybeTransform:
