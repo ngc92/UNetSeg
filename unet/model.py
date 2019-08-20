@@ -6,7 +6,8 @@ from unet.blocks import DownBlock, Bottleneck, UpBlock, OutputBlock
 
 
 class UNetModel(keras.Model):
-    def __init__(self, n_channels, filters=64, depth=4, use_upscaling=False, symmetries=None, *args, **kwargs):
+    def __init__(self, n_channels, filters=64, depth=4, use_upscaling=False, symmetries=None, normalize_input=True,
+                 *args, **kwargs):
         """
         A U-Net as in []. While the model is fully convolutional and thus not limited to a fixed input size,
         the structure of the convolution makes only certain input sizes possible. The call method of this model
@@ -37,6 +38,7 @@ class UNetModel(keras.Model):
 
         self._out_block = OutputBlock(filters=filters, n_channels=n_channels)
 
+        self._normalize_input = normalize_input
         self._n_channels = n_channels
         self._depth = depth
         self._symmetries = symmetries or None
@@ -78,6 +80,13 @@ class UNetModel(keras.Model):
         """
         skip_connections = []
         x = inputs
+        
+        if self._normalize_input:
+            mean = tf.reduce_mean(x, axis=[1, 2, 3], keepdims=True)
+            x = x - mean
+            var = tf.math.reduce_std(x, axis=[1, 2, 3], keepdims=True)
+            x = x / (var + 1e-5)
+
         for block in self._down_blocks:
             x, skip = block(x)
             skip_connections.append(skip)
