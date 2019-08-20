@@ -5,6 +5,7 @@ from easydict import EasyDict
 
 from tensorflow import keras
 from unet.augmentation import AugmentationPipeline
+from unet.augmentation.invariances import LocalBrightnessInvariance
 from unet.ops import segmentation_error_visualization
 import tensorflow as tf
 if TYPE_CHECKING:
@@ -77,25 +78,27 @@ class UNetTrainer(tf.Module):
 
     def evaluate(self, dataset):
         with self._summary_writers.eval.as_default():
-            self._reset_metrics()
-            for i, data in enumerate(dataset.batch(2)):
-                image, ground_truth, mask = data
-                logits, mask = self._prepare_logits_and_mask(image, mask)
-                losses = self.loss(ground_truth, logits, mask)
-                total_loss = tf.add_n([tf.reduce_mean(l) for l in losses.values()])
+            self._evaluate(dataset)
 
-                # convert logits to actual segmentation for further processing
-                segmentation = self._model.logits_to_prediction(logits)
+    def _evaluate(self, dataset):
+        self._reset_metrics()
+        for i, data in enumerate(dataset.batch(2)):
+            image, ground_truth, mask = data
+            logits, mask = self._prepare_logits_and_mask(image, mask)
+            losses = self.loss(ground_truth, logits, mask)
+            total_loss = tf.add_n([tf.reduce_mean(l) for l in losses.values()])
 
-                self._record_metric("loss/total", total_loss)
-                self._record_metrics(losses)
-                for m in self._seg_metrics:
-                    m.update_state(ground_truth, segmentation, sample_weight=mask)
+            # convert logits to actual segmentation for further processing
+            segmentation = self._model.logits_to_prediction(logits)
 
-                if i == 0:
-                    self._record_images(*data, segmentation)
+            self._record_metric("loss/total", total_loss)
+            self._record_metrics(losses)
+            for m in self._seg_metrics:
+                m.update_state(ground_truth, segmentation, sample_weight=mask)
 
-            self.summarize(self._num_epoch)
+            if i == 0:
+                self._record_images(*data, segmentation)
+        self.summarize(self._num_epoch)
 
     def _record_images(self, image, ground_truth, mask, segmentation):
         tf.summary.image("input", image, step=self._num_epoch)
@@ -160,6 +163,10 @@ class UNetTrainer(tf.Module):
         # other relevant data
         tf.summary.scalar("lr", self._optimizer.lr, step)
 
+    @property
+    def summary_dict(self):
+        return {key: metric.result().numpy() for key, metric in self._metrics.items()}
+
     def _record_metric(self, key: str, value: tf.Tensor):
         self._metrics[key].update_state(value)
 
@@ -175,12 +182,12 @@ class UNetTrainer(tf.Module):
 def default_unet_trainer(model: keras.Model, log_path: pathlib.Path = None):
     from unet.augmentation import HorizontalFlips, VerticalFlips, Rotation90Degrees, FreeRotation, Warp
     from unet.augmentation.invariances import NoiseInvariance, BrightnessInvariance, ContrastInvariance, LocalContrastInvariance
-    trainer = UNetTrainer(model, keras.optimizers.Adam(), log_path,
+    trainer = UNetTrainer(model, keras.optimizers.Adam(0.0001), log_path,
                           symmetries=[
                               HorizontalFlips(), VerticalFlips(), Rotation90Degrees(), FreeRotation(),
                               Warp(1.0, 10.0, blur_size=5),
                               ContrastInvariance(0.7, 1.1), NoiseInvariance(0.1), BrightnessInvariance(0.1),
-                              LocalContrastInvariance(0.5)
+                              LocalContrastInvariance(0.5), LocalBrightnessInvariance(0.2)
     ])
 
     def xent_with_mask(ground_truth, logits, mask):
