@@ -92,3 +92,18 @@ def random_crop_stateless(value, size, seed, name=None):
                 maxval=size.dtype.max,
                 seed=seed) % limit
             return tf.slice(value, offset, size, name=name)
+
+
+def segmentation_error_visualization(ground_truth: tf.Tensor, segmentation: tf.Tensor,
+                                     mask: tf.Tensor = None, channel: int = 0):
+    ground_truth = ground_truth[..., channel]
+    segmentation = segmentation[..., channel]
+
+    red = ground_truth - segmentation
+    green = (1 - tf.abs(ground_truth - segmentation)) * ground_truth
+    blue = 2 * (segmentation - ground_truth)
+
+    result = tf.stack([red, green, blue], axis=-1)
+    if mask is not None:
+        result = result * mask
+    return tf.clip_by_value(result, 0.0, 1.0)

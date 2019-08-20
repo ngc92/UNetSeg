@@ -5,6 +5,7 @@ from easydict import EasyDict
 
 from tensorflow import keras
 from unet.augmentation import AugmentationPipeline
+from unet.ops import segmentation_error_visualization
 import tensorflow as tf
 if TYPE_CHECKING:
     from unet.model import UNetModel
@@ -40,31 +41,85 @@ class UNetTrainer(tf.Module):
 
         self._summary_writers = EasyDict()
         self._summary_writers.train = tf.summary.create_file_writer(str(summary_dir / 'train'))
+        self._summary_writers.eval = tf.summary.create_file_writer(str(summary_dir / 'eval'))
 
     def add_loss(self, key: str, loss: callable):
         self._loss_functions["loss/" + key] = loss
         self._metrics["loss/" + key] = keras.metrics.Mean(name=key)
 
     def train_epoch(self, dataset, num_steps=None):
+        """
+        Trains of `dataset` for one epoch, which is either until the end of `dataset` or for `num_steps`.
+        :param dataset: The dataset on which to train.
+        :param num_steps: The number of training steps, if `dataset` is infinite.
+        """
+        if tf.data.experimental.cardinality(dataset) == tf.data.experimental.INFINITE_CARDINALITY and num_steps is None:
+            raise ValueError("Need `num_steps` when given an infinite dataset.")
+
         with self._summary_writers.train.as_default():
             self._train_epoch(dataset, num_steps)
 
     def _train_epoch(self, dataset, num_steps=None):
-        augmented_data = self._augmenter.augment_dataset(dataset).batch(1)
+        self._reset_metrics()
+
+        augmented_data = self._augmenter.augment_dataset(dataset).batch(1).prefetch(1)
         for i, data in enumerate(augmented_data):
             loss, seg = self.train_step(*data)
             if i == 0:
-                tf.summary.image("input", data[0], step=self._num_epoch)
-                tf.summary.image("ground_truth", data[1], step=self._num_epoch)
-                tf.summary.image("mask", data[2], step=self._num_epoch)
-                tf.summary.image("segmentation", seg, step=self._num_epoch)
+                self._record_images(*data, seg)
 
             if num_steps is not None and i > num_steps:
                 break
 
-        # epoch summaries
-        self.summarize(self._num_epoch)
+        # epoch summaries. increase epoch counter first so that train_epoch/evaluate have consistent epoch numbers
         self._num_epoch.assign_add(1)
+        self.summarize(self._num_epoch)
+
+    def evaluate(self, dataset):
+        with self._summary_writers.eval.as_default():
+            self._reset_metrics()
+            for i, data in enumerate(dataset.batch(2)):
+                image, ground_truth, mask = data
+                logits, mask = self._prepare_logits_and_mask(image, mask)
+                losses = self.loss(ground_truth, logits, mask)
+                total_loss = tf.add_n([tf.reduce_mean(l) for l in losses.values()])
+
+                # convert logits to actual segmentation for further processing
+                segmentation = self._model.logits_to_prediction(logits)
+
+                self._record_metric("loss/total", total_loss)
+                self._record_metrics(losses)
+                for m in self._seg_metrics:
+                    m.update_state(ground_truth, segmentation, sample_weight=mask)
+
+                if i == 0:
+                    self._record_images(*data, segmentation)
+
+            self.summarize(self._num_epoch)
+
+    def _record_images(self, image, ground_truth, mask, segmentation):
+        tf.summary.image("input", image, step=self._num_epoch)
+        tf.summary.image("ground_truth", ground_truth, step=self._num_epoch)
+        tf.summary.image("mask", mask, step=self._num_epoch)
+        tf.summary.image("segmentation", segmentation, step=self._num_epoch)
+
+        if mask is not None:
+            mask = self._model.input_mask_to_output_mask(mask)
+            segmentation = tf.image.resize_with_crop_or_pad(segmentation, tf.shape(mask)[1], tf.shape(mask)[2])
+            ground_truth = tf.image.resize_with_crop_or_pad(ground_truth, tf.shape(mask)[1], tf.shape(mask)[2])
+        error_img = segmentation_error_visualization(ground_truth, segmentation, mask, channel=0)
+        tf.summary.image("error", error_img, step=self._num_epoch)
+
+    def _prepare_logits_and_mask(self, image, mask):
+        logits = self._model.logits(image, training=False)
+        logits = tf.image.resize_with_crop_or_pad(logits, tf.shape(image)[1], tf.shape(image)[2])
+
+        if mask is None:
+            mask = tf.ones_like(logits)
+        else:
+            mask = self._model.input_mask_to_output_mask(mask)
+        mask = tf.image.resize_with_crop_or_pad(mask, tf.shape(image)[1], tf.shape(image)[2])
+        return logits, mask
 
     @tf.function
     def train_step(self, image, ground_truth, mask):
@@ -73,19 +128,12 @@ class UNetTrainer(tf.Module):
             "model (%d) and ground truth (%d)" % (self._model.channels, ground_truth.shape[-1])
 
         with tf.GradientTape() as tape:
-            segmentation = self._model.logits(image, training=True)
-            segmentation = tf.image.resize_with_crop_or_pad(segmentation, tf.shape(image)[1], tf.shape(image)[2])
-            if mask is None:
-                mask = tf.ones_like(segmentation)
-            else:
-                mask = self._model.input_mask_to_output_mask(mask)
+            logits, mask = self._prepare_logits_and_mask(image, mask)
+            losses = self.loss(ground_truth, logits, mask)
+            total_loss = tf.add_n([tf.reduce_mean(l) for l in losses.values()])
 
-            mask = tf.image.resize_with_crop_or_pad(mask, tf.shape(image)[1], tf.shape(image)[2])
-            losses = self.loss(ground_truth, segmentation, mask)
-            total_loss = tf.reduce_sum(tf.add_n(list(losses.values())))
-
-            # convert logits to actual segmentation for further processing
-            segmentation = self._model.logits_to_prediction(segmentation)
+        # convert logits to actual segmentation for further processing
+        segmentation = self._model.logits_to_prediction(logits)
 
         self._record_metric("loss/total", total_loss)
         self._record_metrics(losses)
@@ -118,6 +166,10 @@ class UNetTrainer(tf.Module):
     def _record_metrics(self, values: dict):
         for k, v in values.items():
             self._record_metric(k, v)
+
+    def _reset_metrics(self):
+        for metric in self._metrics.values():
+            metric.reset_states()
 
 
 def default_unet_trainer(model: keras.Model, log_path: pathlib.Path = None):
