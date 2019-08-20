@@ -167,7 +167,7 @@ class AugmentationPipeline:
 
     @staticmethod
     def images_from_directories(source_dir, segmentation_dir, shuffle=True, pattern="*.png",
-                                channels_in=3, channels_out=3):
+                                channels_in=3, channels_out=3, name_transform=None):
         """
         Given a source an a segmentations folder, this function returns a `tf.data.Dataset` containing
         all pairs of images. This assumes that the filename in `source_dir` is the same as the
@@ -179,6 +179,7 @@ class AugmentationPipeline:
         :param pattern: File name pattern to select image files. Defaults to `*.png` for png files.
         :param channels_in: Number of channels in the input image.
         :param channels_out: Number of channels in the segmentation.
+        :param name_transform: Function that returns the name of the segmentation file based on the original file name.
         :return: A dataset of image pairs, as per `images_from_list`.
         """
         source_dir = pathlib.Path(source_dir)
@@ -188,7 +189,10 @@ class AugmentationPipeline:
         segmentations = []
         source_images = sorted(source_dir.glob(pattern))
         for source in source_images:
-            segmentation_image = (seg_dir / source.name)
+            seg_name = source.name
+            if name_transform:
+                seg_name = name_transform(seg_name)
+            segmentation_image = (seg_dir / seg_name)
             if not segmentation_image.exists():
                 continue
             sources.append(source)
