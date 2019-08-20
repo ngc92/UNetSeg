@@ -3,6 +3,8 @@ from typing import Tuple
 import tensorflow as tf
 
 from unet.augmentation.augmentation import TransformationProperty
+from unet.layers import BlurLayer
+from unet.ops import make_random_field
 
 
 class Invariance(TransformationProperty):
@@ -61,3 +63,40 @@ class NoiseInvariance(Invariance):
         noise_pattern = tf.random.stateless_uniform(tf.shape(image), minval=-1, maxval=1, seed=seed)
         offset = noise_pattern * factor * self.max_strength
         return tf.clip_by_value(image + offset, 0.0, 1.0)
+
+
+class LocalContrastInvariance(Invariance):
+    def __init__(self, contrast_factor: float, min_segments: int = 4,
+                 min_segment_size: float = 16, blur_size: int = 3):
+        super().__init__(num_discrete=0)
+        self.contrast_factor = contrast_factor
+        self.min_segments = min_segments
+        self.min_segment_size = min_segment_size
+        self.blur_size = blur_size
+        self._blur = BlurLayer(self.blur_size)
+
+    def transform(self, image, factor, seed):
+        low_contrast_image = tf.image.adjust_contrast(image, self.contrast_factor)
+
+        # individual noise pattern
+        noise_pattern = make_random_field(image, 0.5, self.min_segments, self.min_segment_size, 1, self._blur, seed)[0]
+        noise_pattern = (0.5 + noise_pattern) * factor
+        result = image * (1.0 - noise_pattern) + low_contrast_image * noise_pattern
+        return result
+
+
+class LocalBrightnessInvariance(Invariance):
+    def __init__(self, brightness_change: float, min_segments: int = 4,
+                 min_segment_size: float = 16, blur_size: int = 3):
+        super().__init__(num_discrete=0)
+        self.brightness_change = brightness_change
+        self.min_segments = min_segments
+        self.min_segment_size = min_segment_size
+        self.blur_size = blur_size
+        self._blur = BlurLayer(self.blur_size)
+
+    def transform(self, image, factor, seed):
+        # individual noise pattern
+        noise_pattern = make_random_field(image, self.brightness_change, self.min_segments,
+                                          self.min_segment_size, 1, self._blur, seed)[0]
+        return tf.clip_by_value(image + noise_pattern * factor, 0.0, 1.0)

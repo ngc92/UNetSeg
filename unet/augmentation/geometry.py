@@ -4,6 +4,7 @@ import numpy as np
 
 from unet.augmentation.augmentation import TransformationProperty
 from unet.layers import BlurLayer
+from unet.ops import make_random_field
 
 
 class MaybeTransform:
@@ -110,24 +111,7 @@ class Warp(GeometryEquivariance):
         return warped
 
     def make_flow_field(self, image, strength, seed):
-        h, w = tf.shape(image)[0], tf.shape(image)[1]
-
         magnitude = self.min_strength + strength * (self.max_strength - self.min_strength)
+        return make_random_field(image, magnitude, self.min_flow_segments,
+                                 self.min_flow_segment_size, 2, self._blur_flow_field, seed)
 
-        lb = tf.convert_to_tensor(self.min_flow_segments, dtype=tf.float32)
-        ux = tf.cast(h, tf.float32) / tf.convert_to_tensor(self.min_flow_segment_size, dtype=tf.float32)
-        uy = tf.cast(w, tf.float32) / tf.convert_to_tensor(self.min_flow_segment_size, dtype=tf.float32)
-
-        scaling = tf.random.stateless_uniform((2,), seed=seed, minval=0.0, maxval=1.0, dtype=tf.float32)
-        scale_x = tf.cast(lb + (ux - lb) * scaling[0], tf.int32)
-        scale_y = tf.cast(lb + (uy - lb) * scaling[1], tf.int32)
-
-        flow_field = tf.random.stateless_uniform((1, scale_x, scale_y, 2), seed=seed,
-                                                 minval=-magnitude, maxval=magnitude)
-
-        flow_field = tf.image.resize(flow_field, (h + 2 * self.blur_size, w + 2 * self.blur_size))
-
-        with tf.device("/cpu:0"):
-            flow_field = self._blur_flow_field(flow_field)
-
-        return flow_field

@@ -107,3 +107,23 @@ def segmentation_error_visualization(ground_truth: tf.Tensor, segmentation: tf.T
     if mask is not None:
         result = result * mask
     return tf.clip_by_value(result, 0.0, 1.0)
+
+
+def make_random_field(image, magnitude, min_segments, min_segment_size, channels, blur, seed):
+    h, w = tf.shape(image)[0], tf.shape(image)[1]
+
+    lb = tf.convert_to_tensor(min_segments, dtype=tf.float32)
+    ux = tf.cast(h, tf.float32) / tf.convert_to_tensor(min_segment_size, dtype=tf.float32)
+    uy = tf.cast(w, tf.float32) / tf.convert_to_tensor(min_segment_size, dtype=tf.float32)
+
+    scaling = tf.random.stateless_uniform((2,), seed=seed, minval=0.0, maxval=1.0, dtype=tf.float32)
+    scale_x = tf.cast(lb + (ux - lb) * scaling[0], tf.int32)
+    scale_y = tf.cast(lb + (uy - lb) * scaling[1], tf.int32)
+
+    flow_field = tf.random.stateless_uniform((1, scale_x, scale_y, channels), seed=seed, minval=-magnitude, maxval=magnitude)
+    flow_field = tf.image.resize(flow_field, (h + 2 * blur.kernel_size, w + 2 * blur.kernel_size))
+
+    with tf.device("/cpu:0"):
+        flow_field = blur(flow_field)
+
+    return flow_field

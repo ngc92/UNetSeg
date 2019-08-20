@@ -159,7 +159,7 @@ class AugmentationPipeline:
             segmentation.set_shape((None, None, channels_out))
             return image, segmentation
 
-        dataset = dataset.map(load_image, num_parallel_calls=4).cache()
+        dataset = dataset.map(load_image, num_parallel_calls=tf.data.experimental.AUTOTUNE).cache()
         if shuffle:
             return dataset.shuffle(len(source_images))
         else:
@@ -213,31 +213,11 @@ class AugmentationPipeline:
             if mask is not None:
                 mask = 1.0 - tf.cast(tf.equal(mask, 0), tf.float32)
             return self.augment(img, seg, mask)
-        return dataset.map(process_images, num_parallel_calls=4)
+        return dataset.map(process_images, num_parallel_calls=tf.data.experimental.AUTOTUNE)
 
 """
 class GeometricAugmentation:
-    def __init__(self, rotate: bool = True, flip=True, free_rotation: bool = True, scale_factor: float = 0.5,
-                 warping: WarpLayer = None):
-        self.rotate = rotate
-        self.free_rotation = free_rotation
-        self.flip = flip
-        self.scale_factor = scale_factor
-
-        self._warp_layer = warping
-
     def augment(self, source_image: tf.Tensor, segmentation: tf.Tensor):
-        source_image.shape.assert_has_rank(3)
-
-        assert_compatible = tf.debugging.assert_equal(tf.shape(source_image), tf.shape(segmentation))
-        with tf.control_dependencies([assert_compatible]):
-            img, seg = tf.identity(source_image), tf.identity(segmentation)
-
-        if self.rotate and self.free_rotation:
-            rangle = tf.random.uniform((), minval=0.0, maxval=2 * np.pi)
-            img = tfa.image.rotate(img, rangle)
-            seg = tfa.image.rotate(seg, rangle)
-
         h, w = tf.shape(source_image)[0], tf.shape(source_image)[1]
         zoom_x = tf.random.uniform((), minval=tf.cast(h*self.scale_factor, tf.int32), maxval=h, dtype=tf.int32)
         zoom_y = tf.random.uniform((), minval=tf.cast(w*self.scale_factor, tf.int32), maxval=w, dtype=tf.int32)
@@ -248,19 +228,4 @@ class GeometricAugmentation:
         if self._warp_layer:
             stacked = self._warp_layer(stacked)
 
-        if self.rotate and not self.free_rotation:
-            k = tf.random.uniform((), minval=0, maxval=4, dtype=tf.int32)
-            stacked = tf.image.rot90(stacked, k)
-
-        if self.flip is True or self.flip == "lr":
-            stacked = tf.image.random_flip_left_right(stacked)
-        if self.flip is True or self.flip == "ud":
-            stacked = tf.image.random_flip_up_down(stacked)
-
-        # move channels back to last index
-        seg = stacked[..., 3:]
-        img = stacked[..., 0:3]
-
-        img, seg = self.prepare_images(img, seg)
-        return img, seg
 """

@@ -35,6 +35,10 @@ class BlurLayer(keras.layers.Layer):
 
         self.kernel = None
 
+    @property
+    def kernel_size(self):
+        return self._size
+
     def build(self, input_shape):
         self.kernel = self.add_weight(
             name='kernel',
