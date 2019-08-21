@@ -25,16 +25,21 @@ dataset = AugmentationPipeline.images_from_directories(
     channels_in=1, channels_out=1
 )
 
+def prep(img):
+    size = 572  # model.input_size_for_output(512)
+    return tf.image.convert_image_dtype(
+        tf.image.resize_with_crop_or_pad(img, size, size),
+        dtype=tf.float32)
+
 
 def padding(image, segmentation):
-    mask = tf.ones_like(image)
+    mask = tf.ones_like(image, dtype=tf.float32)
     segmentation = keras.layers.MaxPool2D(3, strides=1, padding="same")(segmentation[None, ...])[0]
-    return (tf.image.resize_with_crop_or_pad(image, 588, 588),
-            tf.image.resize_with_crop_or_pad(segmentation, 588, 588),
-            tf.image.resize_with_crop_or_pad(mask, 588, 588))
+    return prep(image), prep(segmentation), prep(mask)
 
 
 dataset = dataset.map(padding)
 for _ in range(10):
     trainer.train_epoch(dataset)
+    print(_)
 ckp.save("ckp/trainer")
