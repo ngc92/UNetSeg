@@ -2,7 +2,7 @@ from typing import Tuple
 
 import tensorflow as tf
 
-from unet.augmentation.augmentation import TransformationProperty
+from unet.dataset.augmentation import TransformationProperty
 from unet.layers import BlurLayer
 from unet.ops import make_random_field
 

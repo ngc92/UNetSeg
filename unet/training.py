@@ -4,8 +4,7 @@ import functools
 from easydict import EasyDict
 
 from tensorflow import keras
-from unet.augmentation import AugmentationPipeline
-from unet.augmentation.invariances import LocalBrightnessInvariance
+from unet.dataset import AugmentationPipeline
 from unet.ops import segmentation_error_visualization
 import tensorflow as tf
 if TYPE_CHECKING:
@@ -180,8 +179,9 @@ class UNetTrainer(tf.Module):
 
 
 def default_unet_trainer(model: keras.Model, log_path: pathlib.Path = None):
-    from unet.augmentation import HorizontalFlips, VerticalFlips, Rotation90Degrees, FreeRotation, Warp
-    from unet.augmentation.invariances import NoiseInvariance, BrightnessInvariance, ContrastInvariance, LocalContrastInvariance
+    from unet.dataset import HorizontalFlips, VerticalFlips, Rotation90Degrees, FreeRotation, Warp
+    from unet.dataset import NoiseInvariance, BrightnessInvariance, ContrastInvariance, LocalContrastInvariance, \
+        LocalBrightnessInvariance
     trainer = UNetTrainer(model, keras.optimizers.Adam(0.0001), log_path,
                           symmetries=[
                               HorizontalFlips(), VerticalFlips(), Rotation90Degrees(), FreeRotation(),

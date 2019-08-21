@@ -4,6 +4,7 @@ import pathlib
 import logging
 import numpy as np
 
+from unet.dataset.images import load_images
 
 _logger = logging.getLogger(__name__)
 
@@ -151,15 +152,7 @@ class AugmentationPipeline:
         _logger.info("Creating dataset with %d images", len(source_images))
 
         dataset = tf.data.Dataset.from_tensor_slices((source_images, segmentation_images))
-
-        def load_image(img_path, seg_path):
-            image = tf.io.decode_image(tf.io.read_file(img_path), channels=channels_in)
-            image.set_shape((None, None, channels_in))
-            segmentation = tf.io.decode_image(tf.io.read_file(seg_path), channels=channels_out)
-            segmentation.set_shape((None, None, channels_out))
-            return image, segmentation
-
-        dataset = dataset.map(load_image, num_parallel_calls=4).cache()
+        dataset = dataset.map(lambda x, y: load_images((x, y), (channels_in, channels_out)), num_parallel_calls=4).cache()
         if shuffle:
             return dataset.shuffle(len(source_images))
         else:
@@ -218,18 +211,3 @@ class AugmentationPipeline:
                 mask = 1.0 - tf.cast(tf.equal(mask, 0), tf.float32)
             return self.augment(img, seg, mask)
         return dataset.map(process_images, num_parallel_calls=4)
-
-"""
-class GeometricAugmentation:
-    def augment(self, source_image: tf.Tensor, segmentation: tf.Tensor):
-        h, w = tf.shape(source_image)[0], tf.shape(source_image)[1]
-        zoom_x = tf.random.uniform((), minval=tf.cast(h*self.scale_factor, tf.int32), maxval=h, dtype=tf.int32)
-        zoom_y = tf.random.uniform((), minval=tf.cast(w*self.scale_factor, tf.int32), maxval=w, dtype=tf.int32)
-
-        # cannot stack the batch dimension as segmentation and image might have different number of channels
-        stacked = tf.concat([img, seg], axis=2)
-        stacked = tf.image.random_crop(stacked, (zoom_x, zoom_y, tf.shape(stacked)[-1]))
-        if self._warp_layer:
-            stacked = self._warp_layer(stacked)
-
-"""
