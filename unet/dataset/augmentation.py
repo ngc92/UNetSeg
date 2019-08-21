@@ -110,6 +110,13 @@ class AugmentationPipeline:
             source, segmentation, mask = trafo.augment(source, segmentation, mask)
         return source, segmentation, mask
 
+    @tf.function
+    def augment_batch(self, source: tf.Tensor, segmentation: tf.Tensor, mask: tf.Tensor = None):
+        if mask is None:
+            mask = tf.ones_like(segmentation)
+
+        return tf.map_fn(lambda x: self.augment(*x), (source, segmentation, mask), back_prop=False)
+
     def test_for_image(self, source, segmentation, target_folder, num_samples: int, mask=None):
         if not isinstance(target_folder, pathlib.Path):
             target_folder = pathlib.Path(target_folder)
