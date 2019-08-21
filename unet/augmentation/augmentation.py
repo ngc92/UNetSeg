@@ -159,7 +159,7 @@ class AugmentationPipeline:
             segmentation.set_shape((None, None, channels_out))
             return image, segmentation
 
-        dataset = dataset.map(load_image, num_parallel_calls=tf.data.experimental.AUTOTUNE).cache()
+        dataset = dataset.map(load_image, num_parallel_calls=4).cache()
         if shuffle:
             return dataset.shuffle(len(source_images))
         else:
@@ -217,7 +217,7 @@ class AugmentationPipeline:
             if mask is not None:
                 mask = 1.0 - tf.cast(tf.equal(mask, 0), tf.float32)
             return self.augment(img, seg, mask)
-        return dataset.map(process_images, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        return dataset.map(process_images, num_parallel_calls=4)
 
 """
 class GeometricAugmentation:
