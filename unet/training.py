@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 class UNetTrainer(tf.Module):
     def __init__(self, model: "UNetModel", optimizer: keras.optimizers.Optimizer,
-                 summary_dir: pathlib.Path = None, symmetries=None):
+                 summary_dir: pathlib.Path, checkpoint_dir: pathlib.Path, symmetries=None):
         super().__init__()
         self._model = model
         self._augmenter = AugmentationPipeline(symmetries)
@@ -34,14 +34,20 @@ class UNetTrainer(tf.Module):
         self._train_step = tf.Variable(0, trainable=False, name="global_step")
         self._num_epoch = tf.Variable(0, dtype=tf.int64, trainable=False, name="epoch")
 
-        if summary_dir is None:
-            summary_dir = pathlib.Path(".logs/unet")
-        else:
-            summary_dir = pathlib.Path(summary_dir)
-
         self._summary_writers = EasyDict()
         self._summary_writers.train = tf.summary.create_file_writer(str(summary_dir / 'train'))
         self._summary_writers.eval = tf.summary.create_file_writer(str(summary_dir / 'eval'))
+
+        self._checkpoint = tf.train.Checkpoint(trainer=self)
+        self._ckpt_manager = tf.train.CheckpointManager(checkpoint=self._checkpoint, directory=str(checkpoint_dir),
+                                                        max_to_keep=5, checkpoint_name="trainer")
+
+    def restore(self):
+        if self._ckpt_manager.latest_checkpoint is not None:
+            self._checkpoint.restore(self._ckpt_manager.latest_checkpoint)
+
+    def save(self):
+        self._ckpt_manager.save(checkpoint_number=self._num_epoch)
 
     def add_loss(self, key: str, loss: callable):
         self._loss_functions["loss/" + key] = loss
@@ -177,12 +183,23 @@ class UNetTrainer(tf.Module):
         for metric in self._metrics.values():
             metric.reset_states()
 
+    @property
+    def epoch(self):
+        return self._num_epoch.value().numpy()
 
-def default_unet_trainer(model: keras.Model, log_path: pathlib.Path = None):
+
+def default_unet_trainer(model: keras.Model, name: str, log_path: pathlib.Path = None, ckp_path: pathlib.Path = None):
     from unet.dataset import HorizontalFlips, VerticalFlips, Rotation90Degrees, FreeRotation, Warp
     from unet.dataset import NoiseInvariance, BrightnessInvariance, ContrastInvariance, LocalContrastInvariance, \
         LocalBrightnessInvariance
-    trainer = UNetTrainer(model, keras.optimizers.Adam(0.0001), log_path,
+
+    if log_path is None:
+        log_path = pathlib.Path(".logs")
+
+    if ckp_path is None:
+        ckp_path = pathlib.Path(".ckp")
+
+    trainer = UNetTrainer(model, keras.optimizers.Adam(0.0001), summary_dir=log_path / name, checkpoint_dir=ckp_path / name,
                           symmetries=[
                               HorizontalFlips(), VerticalFlips(), Rotation90Degrees(), FreeRotation(),
                               Warp(1.0, 10.0, blur_size=5),
