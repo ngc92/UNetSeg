@@ -53,7 +53,7 @@ class UNetTrainer(tf.Module):
         self._loss_functions["loss/" + key] = loss
         self._metrics["loss/" + key] = keras.metrics.Mean(name=key)
 
-    def train_epoch(self, dataset, num_steps=None):
+    def train_epoch(self, dataset, unsupervised_data=None, num_steps=None):
         """
         Trains of `dataset` for one epoch, which is either until the end of `dataset` or for `num_steps`.
         :param dataset: The dataset on which to train.
@@ -63,14 +63,24 @@ class UNetTrainer(tf.Module):
             raise ValueError("Need `num_steps` when given an infinite dataset.")
 
         with self._summary_writers.train.as_default():
-            self._train_epoch(dataset, num_steps)
+            self._train_epoch(dataset, unsupervised_data, num_steps)
 
-    def _train_epoch(self, dataset, num_steps=None):
+    def _train_epoch(self, dataset, unsupervised_data=None, num_steps=None):
         self._reset_metrics()
 
-        augmented_data = self._augmenter.augment_dataset(dataset).batch(1).prefetch(1)
-        for i, data in enumerate(augmented_data):
-            loss, seg = self.train_step(*data)
+        augmented_data = self._augmenter.augment_dataset(dataset).batch(1).prefetch(2)
+        if unsupervised_data is None:
+            unsupervised_data = []
+        else:
+            unsupervised_data = unsupervised_data.batch(1).prefetch(2)
+
+        for i, data in enumerate(roundrobin(augmented_data, unsupervised_data)):
+            if len(data) == 3:
+                loss, seg = self.train_step(*data)
+            else:
+                logits, _ = self._prepare_logits_and_mask(data[0], data[1])
+                virtual_ground_truth = self._model.logits_to_prediction(logits)
+                loss, seg = self.train_step(*self._augmenter.augment_batch(data[0], virtual_ground_truth, data[1]))
             if i == 0:
                 self._record_images(*data, seg)
 
@@ -216,3 +226,16 @@ def default_unet_trainer(model: keras.Model, name: str, log_path: pathlib.Path =
 
     trainer.add_loss("xent", xent_with_mask)
     return trainer
+
+
+def roundrobin(*iterables):
+    from itertools import cycle, islice
+
+    pending = len(iterables)
+    nexts = cycle(iter(iterable).__next__ for iterable in iterables)
+    while pending:
+        try:
+            for next in nexts: yield next()
+        except StopIteration:
+            pending -= 1
+            nexts = cycle(islice(nexts, pending))
