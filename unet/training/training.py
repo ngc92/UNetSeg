@@ -1,23 +1,22 @@
 from typing import Optional, TYPE_CHECKING
 import pathlib
-import functools
-from easydict import EasyDict
 
 from tensorflow import keras
 from unet.dataset import AugmentationPipeline
 from unet.ops import segmentation_error_visualization
 import tensorflow as tf
+
+from unet.training.base import TrainerBase
+
 if TYPE_CHECKING:
     from unet.model import UNetModel
 
 
-class UNetTrainer(tf.Module):
+class UNetTrainer(TrainerBase):
     def __init__(self, model: "UNetModel", optimizer: keras.optimizers.Optimizer,
                  summary_dir: pathlib.Path, checkpoint_dir: pathlib.Path, symmetries=None):
-        super().__init__()
-        self._model = model
+        super().__init__(model=model, optimizer=optimizer, checkpoint_dir=checkpoint_dir, summary_dir=summary_dir)
         self._augmenter = AugmentationPipeline(symmetries)
-        self._optimizer = optimizer
 
         self._loss_functions = {}
 
@@ -30,24 +29,6 @@ class UNetTrainer(tf.Module):
         self._metrics = {"loss/total": keras.metrics.Mean("total_loss")}
         for m in self._seg_metrics:
             self._metrics["segmentation/" + m.name] = m
-
-        self._train_step = tf.Variable(0, trainable=False, name="global_step")
-        self._num_epoch = tf.Variable(0, dtype=tf.int64, trainable=False, name="epoch")
-
-        self._summary_writers = EasyDict()
-        self._summary_writers.train = tf.summary.create_file_writer(str(summary_dir / 'train'))
-        self._summary_writers.eval = tf.summary.create_file_writer(str(summary_dir / 'eval'))
-
-        self._checkpoint = tf.train.Checkpoint(trainer=self)
-        self._ckpt_manager = tf.train.CheckpointManager(checkpoint=self._checkpoint, directory=str(checkpoint_dir),
-                                                        max_to_keep=5, checkpoint_name="trainer")
-
-    def restore(self):
-        if self._ckpt_manager.latest_checkpoint is not None:
-            self._checkpoint.restore(self._ckpt_manager.latest_checkpoint)
-
-    def save(self):
-        self._ckpt_manager.save(checkpoint_number=self._num_epoch)
 
     def add_loss(self, key: str, loss: callable):
         self._loss_functions["loss/" + key] = loss
@@ -62,7 +43,7 @@ class UNetTrainer(tf.Module):
         if tf.data.experimental.cardinality(dataset) == tf.data.experimental.INFINITE_CARDINALITY and num_steps is None:
             raise ValueError("Need `num_steps` when given an infinite dataset.")
 
-        with self._summary_writers.train.as_default():
+        with self.get_summary_writer("train").as_default():
             self._train_epoch(dataset, unsupervised_data, num_steps)
 
     def _train_epoch(self, dataset, unsupervised_data=None, num_steps=None):
@@ -91,8 +72,8 @@ class UNetTrainer(tf.Module):
         self._num_epoch.assign_add(1)
         self.summarize(self._num_epoch)
 
-    def evaluate(self, dataset):
-        with self._summary_writers.eval.as_default():
+    def evaluate(self, dataset, tag="eval"):
+        with self.get_summary_writer(tag).as_default():
             self._evaluate(dataset)
 
     def _evaluate(self, dataset):
@@ -158,9 +139,7 @@ class UNetTrainer(tf.Module):
         for m in self._seg_metrics:
             m.update_state(ground_truth, segmentation, sample_weight=mask)
 
-        grads = tape.gradient(total_loss, self._model.trainable_variables)
-        self._optimizer.apply_gradients(zip(grads, self._model.trainable_variables))
-        self._train_step.assign_add(1)
+        self._gradient_descent_update(tape, total_loss)
 
         return total_loss, segmentation
 
@@ -192,10 +171,6 @@ class UNetTrainer(tf.Module):
     def _reset_metrics(self):
         for metric in self._metrics.values():
             metric.reset_states()
-
-    @property
-    def epoch(self):
-        return self._num_epoch.value().numpy()
 
 
 def default_unet_trainer(model: keras.Model, name: str, log_path: pathlib.Path = None, ckp_path: pathlib.Path = None):
