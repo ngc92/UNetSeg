@@ -201,6 +201,8 @@ class AugmentationPipeline:
         if len(sources) != len(source_images):
             _logger.warn("Found %d source images but only %d matching segmentations", len(source_images), len(sources))
 
+        _logger.info("Found %d image pairs", len(sources))
+
         return AugmentationPipeline.images_from_list(sources, segmentations, shuffle=shuffle,
                                                      channels_in=channels_in, channels_out=channels_out)
 
