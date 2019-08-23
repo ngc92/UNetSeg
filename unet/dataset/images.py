@@ -20,6 +20,7 @@ def load_images(paths, num_channels):
     Loads the images given by `paths` with the number of channels given by channels.
     :param paths: A (nested) structure of string tensors describing image paths.
     :param num_channels: A (nested) structure of ints describing the numbers of channels in each image.
+    TODO allow num_channels to be of int type and broadcast!
     :return: A (nested) structure of (tf.uint8) image tensors.
     """
     return tf.nest.map_structure(load_image, paths, num_channels)
@@ -43,6 +44,8 @@ def filename_transformer(in_pattern: str, out_pattern: str):
 
     def transform(file_name):
         num = parse(in_pattern, file_name)
+        if num is None:
+            raise ValueError("Input file name '%s' does not match pattern '%s'" % (file_name, in_pattern))
         return out_pattern.format(*num.fixed, **num.named)
     return transform
 
@@ -60,7 +63,6 @@ def make_image_dataset(images, channels, shuffle=True, max_buffer: int = 1000, c
     by the number of elements in the dataset.
     :return: A dataset of loaded images (uint8).
     """
-    images = tf.nest.map_structure(str, images)
     dataset = tf.data.Dataset.from_tensor_slices(images)
 
     # load_images expects two arguments, but dataset.map unpacks tuples, so we need to step in here
