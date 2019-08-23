@@ -1,7 +1,9 @@
 import tensorflow as tf
 from tensorflow import keras
+from easydict import EasyDict
 
 from unet.dataset import *
+from unet.dataset.images import filename_transformer
 from unet.model import UNetModel
 from unet.training import default_unet_trainer
 
@@ -13,11 +15,16 @@ SETTING = "one"
 trainer = default_unet_trainer(model, SETTING)
 trainer.restore()
 
-#pipeline = AugmentationPipeline([HorizontalFlips(), VerticalFlips(), Rotation90Degrees(), FreeRotation(),
-#                              Warp(1.0, 10.0, blur_size=5),
-#                              NoiseInvariance(0.2), ContrastInvariance(0.5, 1.1), BrightnessInvariance(0.2)])
-#pipeline.test_for_image("data/train/original/wingdisk_grey_000.png", "data/train/segmentation/wingdisk_grey_000.png", "/tmp/test", 10)
-#exit()
+
+def get_dataset(spec):
+    spec = EasyDict(spec)
+    return AugmentationPipeline.images_from_directories(
+        source_dir=spec.original.directory,
+        channels_in=spec.original.channels,
+        segmentation_dir=spec.segmentation.directory,
+        channels_out=spec.segmentation.channels,
+        pattern=spec.pattern
+    )
 
 
 def prep(img):
@@ -48,13 +55,7 @@ eval_data = AugmentationPipeline.images_from_directories(
 )
 eval_data = eval_data.map(padding)
 
-
-def wingdisk_mapping(x):
-    from parse import parse
-    num = parse("wingdisk_grey_{:03d}.png", x)[0]
-    return "wingdisk_seg_{:03d}.png".format(num)
-
-
+wingdisk_mapping = filename_transformer("wingdisk_grey_{:03d}.png", "wingdisk_seg_{:03d}.png")
 test_data = AugmentationPipeline.images_from_directories(
     "data/DahmannGroup/Wingdisc/wingdisk_org/wingdisk_grey",
     "data/DahmannGroup/Wingdisc/wingdisk_seg/wingdisk_seg_grey",
