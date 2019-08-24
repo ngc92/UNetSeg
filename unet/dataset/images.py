@@ -50,12 +50,12 @@ def filename_transformer(in_pattern: str, out_pattern: str):
     return transform
 
 
-def make_image_dataset(images, channels, shuffle=True, max_buffer: int = 1000, cache: bool = None):
+def make_image_dataset(image_paths, channels, shuffle=True, max_buffer: int = 1000, cache: bool = None):
     """
     Given a structure of images, makes a `tf.data.Dataset` out of these.
     If there are less than `max_buffer` elements, than the entire dataset will be cached in memory,
     and if `shuffle == True`, the shuffle buffer will be as big as the entire dataset.
-    :param images: A (nested) structure of paths to images.
+    :param image_paths: A (nested) structure of paths to images, or a dataset of paths to images.
     :param channels: A (nested) structure of integers with the number of channels in the images.
     :param shuffle: Whether to shuffle the dataset.
     :param max_buffer: Maximum number of elements to use in a buffer.
@@ -63,7 +63,10 @@ def make_image_dataset(images, channels, shuffle=True, max_buffer: int = 1000, c
     by the number of elements in the dataset.
     :return: A dataset of loaded images (uint8).
     """
-    dataset = tf.data.Dataset.from_tensor_slices(images)
+    if not isinstance(image_paths, tf.data.Dataset):
+        dataset = tf.data.Dataset.from_tensor_slices(image_paths)
+    else:
+        dataset = image_paths
 
     # load_images expects two arguments, but dataset.map unpacks tuples, so we need to step in here
     # TODO does this work for dicts and single element images?
