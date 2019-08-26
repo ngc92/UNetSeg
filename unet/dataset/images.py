@@ -82,3 +82,22 @@ def make_image_dataset(image_paths, channels, shuffle=True, max_buffer: int = 10
         return dataset.shuffle(tf.minimum(tf.data.experimental.cardinality(dataset), max_buffer))
     else:
         return dataset
+
+
+# TODO derive from namedtuple so that data cannot be changed anymore
+class ImageSetSpec:
+    def __init__(self, directory, pattern, channels):
+        self.directory = directory
+        self.pattern = pattern
+        self.channels = channels
+        self._image_list = None
+
+    @property
+    def image_files(self):
+        """
+        :return: A list with paths to all the image files.
+        """
+        if self._image_list is None:
+            self._image_list = sorted(self.directory.glob(self.pattern))
+
+        return self._image_list
