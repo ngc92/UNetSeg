@@ -101,3 +101,12 @@ class ImageSetSpec:
             self._image_list = sorted(self.directory.glob(self.pattern))
 
         return self._image_list
+
+    @property
+    def as_dict(self):
+        return {"directory": self.directory, "pattern": self.pattern, "channels": self.channels}
+
+    @staticmethod
+    def from_dict(data):
+        return ImageSetSpec(**data)
+
