@@ -68,7 +68,10 @@ def make_image_dataset(image_paths, channels, shuffle=True, max_buffer: int = 10
     :return: A dataset of loaded images (uint8).
     """
     if not isinstance(image_paths, tf.data.Dataset):
-        dataset = tf.data.Dataset.from_tensor_slices(image_paths)
+        if isinstance(image_paths, list):
+            raise ValueError("Please supply the images as a tuple containing lists of image paths, "
+                             "not as a list of tuples.")
+        dataset = tf.data.Dataset.from_tensor_slices(tf.nest.map_structure(str, image_paths))
     else:
         dataset = image_paths
 
@@ -127,22 +130,30 @@ class ImageSetSpec:
             data["directory"] = root / pathlib.Path(data["directory"])
         return ImageSetSpec(**data)
 
+    def __repr__(self):
+        return "ImageSetSpec(%r, %r, %r, %r)" % (str(self.directory), self.pattern, self.channels, self.source_pattern)
+
 
 def pic2pic_matching_files(source_spec: ImageSetSpec, target_spec: ImageSetSpec):
     """
-    Given two image specs, returns a list of path tuples for matching files.
+    Given two image specs, returns matching files as a tuple of lists. The struct of array approach was chosen over
+    an array of struct approaches, so that it can be used to create a `tf.data.Dataset` of tuples instead of a dataset
+    containing a single, multi-element tensor.
     :param source_spec: Image spec for the source images.
     :param target_spec: Image spec for the target images. Either `pattern` and `source_pattern` need to be set, or
     these images are expected to have the same file name as the source images.
-    :return: A list of tuples of file paths.
+    :return: A pair of a lists.
     """
     sources = []
     targets = []
 
     source_images = source_spec.image_files
+    if len(source_images) == 0:
+        _logger.warning("Could not find any images for %s", source_spec)
     for source in source_images:
         seg = target_spec.get_matching(source)
         if not seg.exists():
+            _logger.warning("Could not find matching file '%s' for source '%s'", source, seg)
             continue
         sources.append(source)
         targets.append(seg)
@@ -152,7 +163,7 @@ def pic2pic_matching_files(source_spec: ImageSetSpec, target_spec: ImageSetSpec)
 
     _logger.info("Found %d image pairs", len(sources))
 
-    return list(zip(sources, targets))
+    return sources, targets
 
 
 class SegmentationDataset:
@@ -167,6 +178,9 @@ class SegmentationDataset:
         :return:
         """
         image_paths = pic2pic_matching_files(source_spec=self.source_spec, target_spec=self.seg_spec)
+        if len(image_paths[0]) == 0:
+            raise ValueError("Could not find any images for the dataset")
+
         images = make_image_dataset(image_paths, (self.source_spec.channels, self.seg_spec.channels), shuffle=shuffle)
         return images
 

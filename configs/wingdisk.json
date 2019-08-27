@@ -1,14 +1,14 @@
 {
-  "directory": "data/train",
+  "directory": "data/DahmannGroup/Wingdisc",
   "source": {
     "pattern": "*.png",
-    "directory": "wingdisk_grey",
+    "directory": "wingdisk_org/wingdisk_grey",
     "channels": 1
   },
   "target": {
     "pattern": "wingdisk_seg_{:03d}.png",
     "source_pattern": "wingdisk_grey_{:03d}.png",
-    "directory": "wingdisk_seg_grey",
+    "directory": "wingdisk_seg/wingdisk_seg_grey",
     "channels": 1
   }
 }

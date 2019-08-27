@@ -1,0 +1,13 @@
+{
+  "directory": "data/train",
+  "source": {
+    "pattern": "000.png",
+    "directory": "original",
+    "channels": 1
+  },
+  "target": {
+    "pattern": "*.png",
+    "directory": "segmentation",
+    "channels": 1
+  }
+}

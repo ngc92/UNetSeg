@@ -1,6 +1,5 @@
 import tensorflow as tf
 from tensorflow import keras
-import json
 
 from unet.dataset import *
 from unet.dataset.images import SegmentationDataset
@@ -17,7 +16,7 @@ trainer.restore()
 
 
 def prep(img):
-    size = 572  # model.input_size_for_output(512)
+    size = 572
     return tf.image.convert_image_dtype(
         tf.image.resize_with_crop_or_pad(img, size, size),
         dtype=tf.float32)
@@ -29,8 +28,11 @@ def padding(image, segmentation):
     return prep(image), prep(segmentation), prep(mask)
 
 
-pattern = "000.png" if SETTING == "one" else "*.png"
-dataset = SegmentationDataset.from_json("configs/train.json").make_dataset().map(padding)
+if SETTING == "one":
+    dataset = SegmentationDataset.from_json("configs/train-one.json").make_dataset().repeat(144).map(padding)
+else:
+    dataset = SegmentationDataset.from_json("configs/train.json").make_dataset().map(padding)
+
 eval_data = SegmentationDataset.from_json("configs/eval.json").make_dataset(shuffle=False).map(padding)
 test_data = SegmentationDataset.from_json("configs/wingdisk.json").make_dataset(shuffle=False).map(padding)
 
@@ -48,10 +50,6 @@ else:
     unsup_data = None
 
 
-if SETTING == "one":
-    dataset = dataset.repeat(144)
-
-
 while trainer.epoch < 15:
     trainer.train_epoch(dataset, unsupervised_data=unsup_data)
     trainer.evaluate(eval_data)
@@ -62,4 +60,8 @@ while trainer.epoch < 15:
 trainer._evaluate(test_data)
 print(trainer.summary_dict)
 
-tf.keras.Model
+
+class FlyModel:
+    def __init__(self):
+        self.input_size = 572
+
