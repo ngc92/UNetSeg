@@ -4,7 +4,7 @@ import pathlib
 import logging
 import numpy as np
 
-from unet.dataset.images import load_images
+from unet.dataset.images import load_images, make_image_dataset
 
 _logger = logging.getLogger(__name__)
 
@@ -134,77 +134,6 @@ class AugmentationPipeline:
             imageio.imwrite(target_folder / ("%03d-image.png" % i), img.numpy())
             imageio.imwrite(target_folder / ("%03d-segmentation.png" % i), seg.numpy())
             imageio.imwrite(target_folder / ("%03d-mask.png" % i), msk.numpy())
-
-    def augmented_dataset(self, source_images, segmentation_images):
-        dataset = self.images_from_list(source_images, segmentation_images, shuffle=True).repeat()
-        return self.augment_dataset(dataset)
-
-    @staticmethod
-    def images_from_list(source_images, segmentation_images, shuffle=True, channels_in=3, channels_out=3):
-        """
-        Given a list of source images and a list of corresponding ground truth segmentations,
-        builds a `tf.data.Dataset` out of these image pairs.
-        :param source_images: List of paths to the source images.
-        :param segmentation_images: List of paths to the ground truth segmentations.
-        :param shuffle: Whether to shuffle the dataset.
-        :param channels_in: Number of channels in the input image.
-        :param channels_out: Number of channels in the segmentation.
-        :return: A dataset of pairs `(image, ground_truth)`.
-        """
-        source_images = list(map(str, source_images))
-        segmentation_images = list(map(str, segmentation_images))
-
-        assert len(source_images) == len(segmentation_images)
-        assert len(source_images) > 0, "No images supplied"
-        _logger.info("Creating dataset with %d images", len(source_images))
-
-        dataset = tf.data.Dataset.from_tensor_slices((source_images, segmentation_images))
-        dataset = dataset.map(lambda x, y: load_images((x, y), (channels_in, channels_out)), num_parallel_calls=4).cache()
-        if shuffle:
-            return dataset.shuffle(len(source_images))
-        else:
-            return dataset
-
-    @staticmethod
-    def images_from_directories(source_dir, segmentation_dir, shuffle=True, pattern="*.png",
-                                channels_in=3, channels_out=3, name_transform=None):
-        """
-        Given a source an a segmentations folder, this function returns a `tf.data.Dataset` containing
-        all pairs of images. This assumes that the filename in `source_dir` is the same as the
-        corresponding filename in the `segmentation_dir`. Source files for which no segmentation file
-        does not exist wil be ignored.
-        :param source_dir: Directory with the input files.
-        :param segmentation_dir: Directory with the ground truth segmentations.
-        :param shuffle: Whether to shuffle the image. Otherwise they are sorted by file name.
-        :param pattern: File name pattern to select image files. Defaults to `*.png` for png files.
-        :param channels_in: Number of channels in the input image.
-        :param channels_out: Number of channels in the segmentation.
-        :param name_transform: Function that returns the name of the segmentation file based on the original file name.
-        :return: A dataset of image pairs, as per `images_from_list`.
-        """
-        source_dir = pathlib.Path(source_dir)
-        seg_dir = pathlib.Path(segmentation_dir)
-
-        sources = []
-        segmentations = []
-        source_images = sorted(source_dir.glob(pattern))
-        for source in source_images:
-            seg_name = source.name
-            if name_transform:
-                seg_name = name_transform(seg_name)
-            segmentation_image = (seg_dir / seg_name)
-            if not segmentation_image.exists():
-                continue
-            sources.append(source)
-            segmentations.append(segmentation_image)
-
-        if len(sources) != len(source_images):
-            _logger.warn("Found %d source images but only %d matching segmentations", len(source_images), len(sources))
-
-        _logger.info("Found %d image pairs", len(sources))
-
-        return AugmentationPipeline.images_from_list(sources, segmentations, shuffle=shuffle,
-                                                     channels_in=channels_in, channels_out=channels_out)
 
     def augment_dataset(self, dataset: tf.data.Dataset):
         """

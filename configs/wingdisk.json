@@ -1,0 +1,14 @@
+{
+  "directory": "data/train",
+  "source": {
+    "pattern": "*.png",
+    "directory": "wingdisk_grey",
+    "channels": 1
+  },
+  "target": {
+    "pattern": "wingdisk_seg_{:03d}.png",
+    "source_pattern": "wingdisk_grey_{:03d}.png",
+    "directory": "wingdisk_seg_grey",
+    "channels": 1
+  }
+}

@@ -1,6 +1,10 @@
 import pathlib
 import tensorflow as tf
+import logging
+import json
 from collections import namedtuple
+
+_logger = logging.getLogger(__name__)
 
 
 def load_image(path, num_channels):
@@ -86,10 +90,15 @@ def make_image_dataset(image_paths, channels, shuffle=True, max_buffer: int = 10
 
 # TODO derive from namedtuple so that data cannot be changed anymore
 class ImageSetSpec:
-    def __init__(self, directory, pattern, channels):
-        self.directory = directory
+    def __init__(self, directory, pattern, channels, source_pattern=None):
+        self.directory = pathlib.Path(directory)
         self.pattern = pattern
         self.channels = channels
+        self.source_pattern = source_pattern
+        if source_pattern is not None:
+            self.transform = filename_transformer(source_pattern, pattern)
+        else:
+            self.transform = lambda x: x
         self._image_list = None
 
     @property
@@ -104,9 +113,75 @@ class ImageSetSpec:
 
     @property
     def as_dict(self):
-        return {"directory": self.directory, "pattern": self.pattern, "channels": self.channels}
+        return {"directory": self.directory, "pattern": self.pattern, "channels": self.channels,
+                "source_pattern": self.source_pattern}
+
+    def get_matching(self, source_image: pathlib.Path):
+        source_name = source_image.name
+        target_name = self.transform(source_name)
+        return self.directory / target_name
+
+    @staticmethod
+    def from_dict(data, root=None):
+        if root is not None:
+            data["directory"] = root / pathlib.Path(data["directory"])
+        return ImageSetSpec(**data)
+
+
+def pic2pic_matching_files(source_spec: ImageSetSpec, target_spec: ImageSetSpec):
+    """
+    Given two image specs, returns a list of path tuples for matching files.
+    :param source_spec: Image spec for the source images.
+    :param target_spec: Image spec for the target images. Either `pattern` and `source_pattern` need to be set, or
+    these images are expected to have the same file name as the source images.
+    :return: A list of tuples of file paths.
+    """
+    sources = []
+    targets = []
+
+    source_images = source_spec.image_files
+    for source in source_images:
+        seg = target_spec.get_matching(source)
+        if not seg.exists():
+            continue
+        sources.append(source)
+        targets.append(seg)
+
+    if len(sources) != len(source_images):
+        _logger.warning("Found %d source images but only %d matching targets", len(source_images), len(sources))
+
+    _logger.info("Found %d image pairs", len(sources))
+
+    return list(zip(sources, targets))
+
+
+class SegmentationDataset:
+    def __init__(self, source_spec: ImageSetSpec, seg_spec: ImageSetSpec):
+        # TODO support for masks
+        self.source_spec = source_spec
+        self.seg_spec = seg_spec
+
+    def make_dataset(self, shuffle=True):
+        """
+        Makes a `tf.data.Dataset` consisting of single pairs of images (no batching!)
+        :return:
+        """
+        image_paths = pic2pic_matching_files(source_spec=self.source_spec, target_spec=self.seg_spec)
+        images = make_image_dataset(image_paths, (self.source_spec.channels, self.seg_spec.channels), shuffle=shuffle)
+        return images
 
     @staticmethod
     def from_dict(data):
-        return ImageSetSpec(**data)
+        if "directory" in data:
+            root = pathlib.Path(data["directory"])
+        else:
+            root = None
 
+        source_spec = ImageSetSpec.from_dict(data["source"], root=root)
+        target_spec = ImageSetSpec.from_dict(data["target"], root=root)
+        return SegmentationDataset(source_spec, target_spec)
+
+    @staticmethod
+    def from_json(path):
+        path = pathlib.Path(path)
+        return SegmentationDataset.from_dict(json.loads(path.read_text()))
