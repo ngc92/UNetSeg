@@ -4,7 +4,7 @@ import tensorflow as tf
 
 from unet.dataset.augmentation import TransformationProperty
 from unet.layers import BlurLayer
-from unet.ops import make_random_field
+from unet.ops import make_random_field, occlude_image
 
 
 class Invariance(TransformationProperty):
@@ -100,3 +100,22 @@ class LocalBrightnessInvariance(Invariance):
         noise_pattern = make_random_field(image, self.brightness_change, self.min_segments,
                                           self.min_segment_size, 1, self._blur, seed)[0]
         return tf.clip_by_value(image + noise_pattern * factor, 0.0, 1.0)
+
+
+class OcclusionInvariance(Invariance):
+    def __init__(self, min_size: int, max_size: int, max_occlusions: int):
+        super().__init__(num_discrete=max_occlusions)
+        self.min_size = min_size
+        self.max_size = max_size
+
+    def transform(self, image, k, seed):
+        r = tf.random.stateless_uniform((4*k,), seed, 0.0, 1.0)
+        for i in range(k):
+            print(i)
+            height = tf.cast(r[4*i + 0] * (self.max_size - self.min_size) + self.min_size, tf.int32)
+            width = tf.cast(r[4*i + 1] * (self.max_size - self.min_size) + self.min_size, tf.int32)
+
+            # TODO randomly decide noise strength in mask?
+            image = occlude_image(image, height, width, r[4*i + 2], r[4*i + 3], 0)
+
+        return image

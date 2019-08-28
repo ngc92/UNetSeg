@@ -127,3 +127,28 @@ def make_random_field(image, magnitude, min_segments, min_segment_size, channels
         flow_field = blur(flow_field)
 
     return flow_field
+
+
+def occlude_image(image, height, width, y, x, new_value):
+    """
+    Takes a single(!) image and overpaints it with a `height x width` rectangle that is places at coordinates `y, x`.
+    :param image: The source image.
+    :param height: Height of the painting rectangle.
+    :param width: Width of the painting rectangle.
+    :param y: Y coordinate of the upper left corner of the rectangle, as a float in range [0, 1]
+    :param x: X coordinate of the upper left corner of the rectangle, as a float in range [0, 1]
+    :param new_value: The value with which the rect will be filled.
+    :return: The overpainted image.
+    """
+    shape = tf.shape(image)
+    rh = shape[0] - height
+    rw = shape[1] - width
+
+    upper = tf.cast(tf.cast(rh, tf.float32) * y, tf.int32)
+    left = tf.cast(tf.cast(rw, tf.float32) * x, tf.int32)
+
+    mask = tf.ones((height, width, 1))
+    mask = tf.pad(mask, [[upper, rh - upper], [left, rw - left], [0, 0]])
+
+    # TODO randomly decide noise strength in mask?
+    return image * (1.0 - mask) + mask * new_value

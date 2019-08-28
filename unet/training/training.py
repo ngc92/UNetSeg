@@ -176,7 +176,7 @@ class UNetTrainer(TrainerBase):
 def default_unet_trainer(model: keras.Model, name: str, log_path: pathlib.Path = None, ckp_path: pathlib.Path = None):
     from unet.dataset import HorizontalFlips, VerticalFlips, Rotation90Degrees, FreeRotation, Warp
     from unet.dataset import NoiseInvariance, BrightnessInvariance, ContrastInvariance, LocalContrastInvariance, \
-        LocalBrightnessInvariance
+        LocalBrightnessInvariance, OcclusionInvariance
 
     if log_path is None:
         log_path = pathlib.Path(".logs")
@@ -184,12 +184,14 @@ def default_unet_trainer(model: keras.Model, name: str, log_path: pathlib.Path =
     if ckp_path is None:
         ckp_path = pathlib.Path(".ckp")
 
-    trainer = UNetTrainer(model, keras.optimizers.Adam(0.0001), summary_dir=log_path / name, checkpoint_dir=ckp_path / name,
+    trainer = UNetTrainer(model, keras.optimizers.Adam(0.0001), summary_dir=log_path / name,
+                          checkpoint_dir=ckp_path / name,
                           symmetries=[
                               HorizontalFlips(), VerticalFlips(), Rotation90Degrees(), FreeRotation(),
                               Warp(1.0, 10.0, blur_size=5),
                               ContrastInvariance(0.7, 1.1), NoiseInvariance(0.1), BrightnessInvariance(0.1),
-                              LocalContrastInvariance(0.5), LocalBrightnessInvariance(0.2)
+                              LocalContrastInvariance(0.5), LocalBrightnessInvariance(0.2),
+                              OcclusionInvariance(16, 32, 4)
     ])
 
     def xent_with_mask(ground_truth, logits, mask):
