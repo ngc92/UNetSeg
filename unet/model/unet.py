@@ -46,7 +46,7 @@ class UNetModel(SegmentationModel):
         return self._depth
 
     @property
-    def border_size(self):
+    def border_width(self):
         return _get_border_size(self.depth)
 
     @property
@@ -75,7 +75,7 @@ class UNetModel(SegmentationModel):
 
     def input_mask_to_output_mask(self, input_mask: tf.Tensor):
         # if mask is 0, 1 - mask is 1 and all pixels touched by this input will be masked.
-        return 1.0 - keras.layers.MaxPooling2D(pool_size=1+2*self.border_size, strides=1)(1.0 - input_mask)
+        return 1.0 - keras.layers.MaxPooling2D(pool_size=1+2*self.border_width, strides=1)(1.0 - input_mask)
 
     def predict(self, image, padding=False):
         """
@@ -97,7 +97,7 @@ class UNetModel(SegmentationModel):
 
         # add "border size" many pixels so input and output can have same shape
         if padding:
-            bs = self.border_size
+            bs = self.border_width
             image = tf.pad(image, [[0, 0], [bs, bs], [bs, bs], [0, 0]])
 
         h, w, c = image.shape[1:]
@@ -164,7 +164,7 @@ class UNetModel(SegmentationModel):
         return int(_get_output_size(input_size, self.depth))
 
     def input_size_for_output(self, output_size):
-        return _get_input_size(output_size + 2*self.border_size, self.depth, crop=False)
+        return _get_input_size(output_size + 2 * self.border_width, self.depth, crop=False)
 
 
 def _get_input_size(image_size, depth, crop=True):

@@ -8,7 +8,14 @@ from unet.ops import make_random_field
 
 
 class MaybeTransform:
+    """
+    Utility callable whose call operator applies a given operation `op` to its
+    input if the settings parameter `k` is one and is the identity if the `k` is zero.
+    """
     def __init__(self, op):
+        """
+        :param op: The operation to apply conditionally.
+        """
         self.op = op
 
     def __call__(self, image, k):
@@ -16,6 +23,9 @@ class MaybeTransform:
 
 
 class GeometryEquivariance(TransformationProperty):
+    """
+    A transformation that is applied to input, segmentation, and mask in the same way.
+    """
     def image_transform(self, image: tf.Tensor, argument: tf.Tensor, seed: tf.Tensor) -> tf.Tensor:
         return self.transform(image, argument, seed)
 

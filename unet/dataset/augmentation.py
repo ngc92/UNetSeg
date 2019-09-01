@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import tensorflow as tf
 import imageio
 import pathlib
@@ -56,6 +58,14 @@ class TransformationProperty:
         raise NotImplementedError()
 
     def augment(self, source: tf.Tensor, segmentation: tf.Tensor, mask: tf.Tensor):
+        """
+        Performs a random augmentation on the given input data.
+        :param source: The source image that should be augmented.
+        :param segmentation: The corresponding ground truth segmentation, that might also be transformed due to the
+        augmentation.
+        :param mask: The input mask. Some augmentations might make parts of the input invalid, which will be masked.
+        :return: New source, segmentation, and mask.
+        """
         # verify inputs
         source.shape.assert_has_rank(3)
 
@@ -66,7 +76,7 @@ class TransformationProperty:
                 self.segmentation_transform(segmentation, argument=choice, seed=seed),
                 self.mask_transform(mask, argument=choice, seed=seed))
 
-    def boost(self, source: tf.Tensor, mask: tf.Tensor):
+    def boost(self, source: tf.Tensor, mask: tf.Tensor) -> Tuple[tf.Tensor, tf.Tensor, callable]:
         # verify inputs
         source.shape.assert_has_rank(3)
 

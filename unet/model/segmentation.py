@@ -5,9 +5,17 @@ from tensorflow import keras
 
 
 class SegmentationModel(keras.Model, metaclass=ABCMeta):
+    """
+    Base class for segmentation models. These are image-to-image mappings
+    where the last layer is a classification. The network may accept inputs
+    only for specific sizes, and the size of the output image may be different
+    from the input image.
+    """
+
     def __init__(self, channels, normalize_input=True, *args, **kwargs):
         """
         :param channels: Number of channels in the output image.
+        :param normalize_input: Whether input images will be normalized before being passed to the network.
         :param args: Arguments passed on to `keras.Model`.
         :param kwargs: Arguments passed on to `keras.Model`.
         """
@@ -16,8 +24,20 @@ class SegmentationModel(keras.Model, metaclass=ABCMeta):
         self._normalize_input = normalize_input
     
     @property
-    def channels(self):
+    def channels(self) -> int:
+        """Number of output channels"""
         return self._n_channels
+
+    @property
+    def border_width(self) -> int:
+        """
+        Size of the border in the input image for which no output will be produced. If the segmentation
+        has the same scale as the input, then a border of `b` means that for an input image defined on `[0, h] x [0, w]`
+        the output is only defined on `[b, h-b] x [b, w-b]`.
+        Such a situation can easily arise if the network uses convolutions with `"VALID"` padding.
+        :return: Border width in pixels.
+        """
+        raise NotImplementedError()
 
     @abstractmethod
     def logits(self, inputs, training):
@@ -25,7 +45,6 @@ class SegmentationModel(keras.Model, metaclass=ABCMeta):
         Applies the U-Net to the input image and returns the resulting logits.
         :param inputs: A batch of images
         :param training: Whether to operate in training or inference mode. Activates dropout in the bottleneck layer.
-        :param mask: TODO would this even work?
         :return: The segmented image. Note that this is smaller than the input image.
         """
         pass
