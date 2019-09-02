@@ -9,7 +9,9 @@ class SegmentationModel(keras.Model, metaclass=ABCMeta):
     Base class for segmentation models. These are image-to-image mappings
     where the last layer is a classification. The network may accept inputs
     only for specific sizes, and the size of the output image may be different
-    from the input image.
+    from the input image. In particular, an input image `[0, h]×[0, w]` can be
+    mapped to a segmentation `[b, h-b]×[b, w-b]`. In this case `b` is given
+    by `SegmentationModel.border_width`.
     """
 
     def __init__(self, channels, normalize_input=True, *args, **kwargs):
@@ -40,6 +42,15 @@ class SegmentationModel(keras.Model, metaclass=ABCMeta):
         raise NotImplementedError()
 
     @abstractmethod
+    def is_valid_input_size(self, input_size):
+        """
+        Checks whether the given shape is a valid input size for this network.
+        :param input_size: A 2-tuple containing the height and width of the input image.
+        :return: True, if the network can process the given input.
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
     def logits(self, inputs, training):
         """
         Applies the U-Net to the input image and returns the resulting logits.
@@ -47,6 +58,10 @@ class SegmentationModel(keras.Model, metaclass=ABCMeta):
         :param training: Whether to operate in training or inference mode. Activates dropout in the bottleneck layer.
         :return: The segmented image. Note that this is smaller than the input image.
         """
+        pass
+
+    @abstractmethod
+    def input_mask_to_output_mask(self, input_mask: tf.Tensor):
         pass
 
     def logits_to_prediction(self, logits):

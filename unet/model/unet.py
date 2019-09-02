@@ -49,6 +49,18 @@ class UNetModel(SegmentationModel):
     def border_width(self):
         return _get_border_size(self.depth)
 
+    def is_valid_input_size(self, input_size):
+        """
+        Checks whether the given shape is a valid input size for this network.
+        :param input_size: A 2-tuple containing the height and width of the input image.
+        :return: True, if the network can process the given input.
+        """
+        try:
+            output = self.output_size(input_size)
+            return True
+        except AssertionError:
+            return False
+
     @property
     def symmetries(self):
         return self._symmetries
