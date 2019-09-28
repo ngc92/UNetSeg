@@ -6,6 +6,84 @@ from unet.blocks import DownBlock, Bottleneck, UpBlock, OutputBlock
 from unet.model.segmentation import SegmentationModel
 
 
+class UNetMapping(keras.Model):
+    """
+    This class implements a mapping that corresponds to the unet structure. Input images of shape `w x h x c` are mapped
+    to new images `(w-b) x (h-b) x o` for a specified number `o` of output channels. There is expected to be some
+    correspondence between the pixel locations in the input image and in the output image.
+    """
+    def __init__(self, out_channels: int = 1, filters: int = 64, depth: int = 4, use_upscaling: bool = False):
+        if not isinstance(out_channels, int) or out_channels < 1:
+            raise ValueError("Invalid number of output channels")
+
+        self._down_blocks = [DownBlock(filters=filters, name="input")]
+        self._up_blocks = []
+
+        for num_filters in [2**k * filters for k in range(1, depth)]:
+            down_block = DownBlock(filters=num_filters, name="down_%d" % num_filters)
+            self._down_blocks.append(down_block)
+
+        self._bottleneck = Bottleneck(filters=2**depth * filters, use_upscaling=use_upscaling)
+
+        for num_filters in [2**k * filters for k in reversed(range(1, depth))]:
+            self._up_blocks.append(UpBlock(filters=num_filters, name="up_%d" % num_filters, use_upscaling=use_upscaling))
+
+        self._out_block = OutputBlock(filters=filters, n_channels=out_channels)
+        self._depth = depth
+
+    def call(self, inputs, training=None):
+        """
+        Applies the U-Net to the input image..
+        :param inputs: A batch of images
+        :param training: Whether to operate in training or inference mode. Activates dropout in the bottleneck layer.
+        :return: The segmented image. Note that this is smaller than the input image.
+        """
+        skip_connections = []
+        x = inputs
+        for block in self._down_blocks:
+            x, skip = block(x)
+            skip_connections.append(skip)
+
+        x = self._bottleneck(x, training=training)
+        for block in self._up_blocks:
+            x = block((x, skip_connections.pop()))
+
+        return self._out_block((x, skip_connections.pop()))
+
+    @property
+    def depth(self):
+        """The depth of this UNet: Number of downward blocks."""
+        return self._depth
+
+    @property
+    def border_width(self):
+        """
+        The size of the border of this UNet. This is the number of pixels that the output image is smaller
+        (symmetrically) than the input image.
+        :return:
+        """
+        return _get_border_size(self.depth)
+
+    def is_valid_input_size(self, input_size):
+        """
+        Checks whether the given shape is a valid input size for this network.
+        :param input_size: A 2-tuple containing the height and width of the input image.
+        :return: True, if the network can process the given input.
+        """
+        try:
+            output = self.output_size(input_size)
+            return True
+        except AssertionError:
+            return False
+
+    def output_size(self, input_size):
+        """The size of the output image, given an input of shape `image_size`"""
+        return int(_get_output_size(input_size, self.depth))
+
+    def input_size_for_output(self, output_size):
+        return _get_input_size(output_size + 2 * self.border_width, self.depth, crop=False)
+
+
 class UNetModel(SegmentationModel):
     def __init__(self, n_channels, filters=64, depth=4, use_upscaling=False, symmetries=None, normalize_input=True,
                  **kwargs):
@@ -21,33 +99,16 @@ class UNetModel(SegmentationModel):
         """
         super().__init__(n_channels, normalize_input=normalize_input, **kwargs)
 
-        # TODO there should be support for both regression output and classification output
-        if not isinstance(n_channels, int) or n_channels < 1:
-            raise ValueError("Invalid number of output channels")
-
-        self._down_blocks = [DownBlock(filters=filters, name="input")]
-        self._up_blocks = []
-
-        for num_filters in [2**k * filters for k in range(1, depth)]:
-            down_block = DownBlock(filters=num_filters, name="down_%d" % num_filters)
-            self._down_blocks.append(down_block)
-
-        self._bottleneck = Bottleneck(filters=2**depth * filters, use_upscaling=use_upscaling)
-
-        for num_filters in [2**k * filters for k in reversed(range(1, depth))]:
-            self._up_blocks.append(UpBlock(filters=num_filters, name="up_%d" % num_filters, use_upscaling=use_upscaling))
-
-        self._out_block = OutputBlock(filters=filters, n_channels=n_channels)
-        self._depth = depth
+        self._mapping = UNetMapping(n_channels, filters, depth, use_upscaling)
         self._symmetries = symmetries or None
 
     @property
     def depth(self):
-        return self._depth
+        return self._mapping.depth
 
     @property
     def border_width(self):
-        return _get_border_size(self.depth)
+        return self._mapping.border_width
 
     def is_valid_input_size(self, input_size):
         """
@@ -55,11 +116,7 @@ class UNetModel(SegmentationModel):
         :param input_size: A 2-tuple containing the height and width of the input image.
         :return: True, if the network can process the given input.
         """
-        try:
-            output = self.output_size(input_size)
-            return True
-        except AssertionError:
-            return False
+        return self._mapping.is_valid_input_size(input_size)
 
     @property
     def symmetries(self):
@@ -70,20 +127,9 @@ class UNetModel(SegmentationModel):
         Applies the U-Net to the input image and returns the resulting logits.
         :param inputs: A batch of images
         :param training: Whether to operate in training or inference mode. Activates dropout in the bottleneck layer.
-        :param mask: TODO would this even work?
         :return: The segmented image. Note that this is smaller than the input image.
         """
-        skip_connections = []
-        x = inputs
-        for block in self._down_blocks:
-            x, skip = block(x)
-            skip_connections.append(skip)
-
-        x = self._bottleneck(x, training=training)
-        for block in self._up_blocks:
-            x = block((x, skip_connections.pop()))
-
-        return self._out_block((x, skip_connections.pop()))
+        return self._mapping(inputs, training=training)
 
     def input_mask_to_output_mask(self, input_mask: tf.Tensor):
         # if mask is 0, 1 - mask is 1 and all pixels touched by this input will be masked.
@@ -173,10 +219,10 @@ class UNetModel(SegmentationModel):
         return tf.add_n([p_11, p_12, p_21, p_22]) / tf.add_n([w_11, w_12, w_21, w_22])
 
     def output_size(self, input_size):
-        return int(_get_output_size(input_size, self.depth))
+        return self._mapping.output_size(input_size)
 
     def input_size_for_output(self, output_size):
-        return _get_input_size(output_size + 2 * self.border_width, self.depth, crop=False)
+        return self._mapping.input_size_for_output(output_size)
 
 
 def _get_input_size(image_size, depth, crop=True):

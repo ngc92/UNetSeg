@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 
 class TiledPredictor:
     """
-    A tiled predictor takes an existing predictor (currently: a SegmentationModel instance) and allows it to be allowed
+    A tiled predictor takes an existing predictor (currently: a SegmentationModel instance) and allows it to be applied
     to arbitrarily shaped input images. This is implemented by taking overlapping (according to the base predictor
     border) patches of the image and predicting these separately, then stitching together the result. If the image size
     is not exactly compatible with this tiling, the last (in each dimension) tile has a bigger overlap with the

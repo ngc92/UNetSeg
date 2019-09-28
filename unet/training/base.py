@@ -4,6 +4,10 @@ from tensorflow import keras
 
 
 class TrainerBase(tf.Module):
+    """
+    The base class for a training module. It keeps track of training step and epoch, manages checkpoints
+    and summary writing.
+    """
     def __init__(self, model: keras.Model, optimizer: keras.optimizers.Optimizer,
                  checkpoint_dir: pathlib.Path, summary_dir: pathlib.Path):
         super().__init__()
@@ -19,6 +23,8 @@ class TrainerBase(tf.Module):
 
         self._summary_dir = summary_dir
         self._summary_writers = {}
+
+        self._metrics = {}
 
     def restore(self):
         if self._ckpt_manager.latest_checkpoint is not None:
@@ -49,3 +55,35 @@ class TrainerBase(tf.Module):
         grads = tape.gradient(total_loss, self.model.trainable_variables)
         self._optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
         self._train_step.assign_add(1)
+
+    # metrics handling: currently only scalar metrics
+    def add_metric(self, tag: str, metric):
+        self._metrics[tag] = metric
+
+    def reset_metrics(self):
+        """
+        Resets all tracked metrics.
+        """
+        for metric in self._metrics.values():
+            metric.reset_states()
+
+    def record_metric(self, key: str, value: tf.Tensor):
+        """
+        Record a single, named metric.
+        """
+        self._metrics[key].update_state(value)
+
+    def record_metrics(self, _arg_: dict = None, **kwargs):
+        """
+        Record multiple metrics at ones. This is just a convenience
+        method that calls `record_metric` for every entry.
+        :param _arg_: A dictionary of str/Tensor type, which for each metric with the given key contains the
+        corresponding update.
+        :param kwargs: Any additional keyword arguments will be interpreted as further keys.
+        """
+        if _arg_ is not None:
+            for k, v in _arg_.items():
+                self.record_metric(k, v)
+
+        if kwargs:
+            self.record_metrics(kwargs)

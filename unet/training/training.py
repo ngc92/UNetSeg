@@ -47,7 +47,7 @@ class UNetTrainer(TrainerBase):
             self._train_epoch(dataset, unsupervised_data, num_steps)
 
     def _train_epoch(self, dataset, unsupervised_data=None, num_steps=None):
-        self._reset_metrics()
+        self.reset_metrics()
 
         augmented_data = self._augmenter.augment_dataset(dataset).batch(1).prefetch(2)
         if unsupervised_data is None:
@@ -77,7 +77,7 @@ class UNetTrainer(TrainerBase):
             self._evaluate(dataset)
 
     def _evaluate(self, dataset):
-        self._reset_metrics()
+        self.reset_metrics()
         for i, data in enumerate(dataset.batch(2)):
             image, ground_truth, mask = data
             logits, mask = self._prepare_logits_and_mask(image, mask)
@@ -87,8 +87,8 @@ class UNetTrainer(TrainerBase):
             # convert logits to actual segmentation for further processing
             segmentation = self._model.logits_to_prediction(logits)
 
-            self._record_metric("loss/total", total_loss)
-            self._record_metrics(losses)
+            self.record_metric("loss/total", total_loss)
+            self.record_metrics(losses)
             for m in self._seg_metrics:
                 m.update_state(ground_truth, segmentation, sample_weight=mask)
 
@@ -134,8 +134,8 @@ class UNetTrainer(TrainerBase):
         # convert logits to actual segmentation for further processing
         segmentation = self._model.logits_to_prediction(logits)
 
-        self._record_metric("loss/total", total_loss)
-        self._record_metrics(losses)
+        self.record_metric("loss/total", total_loss)
+        self.record_metrics(losses)
         for m in self._seg_metrics:
             m.update_state(ground_truth, segmentation, sample_weight=mask)
 
@@ -160,17 +160,6 @@ class UNetTrainer(TrainerBase):
     @property
     def summary_dict(self):
         return {key: metric.result().numpy() for key, metric in self._metrics.items()}
-
-    def _record_metric(self, key: str, value: tf.Tensor):
-        self._metrics[key].update_state(value)
-
-    def _record_metrics(self, values: dict):
-        for k, v in values.items():
-            self._record_metric(k, v)
-
-    def _reset_metrics(self):
-        for metric in self._metrics.values():
-            metric.reset_states()
 
 
 def default_unet_trainer(model: keras.Model, name: str, log_path: pathlib.Path = None, ckp_path: pathlib.Path = None):
